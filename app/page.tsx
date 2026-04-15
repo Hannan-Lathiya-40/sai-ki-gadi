@@ -1,20 +1,29 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { ADMIN_SESSION_COOKIE } from "@/lib/admin-auth";
 
 import { LoginForm } from "./login-form";
 
-export default function Home() {
+export default async function Home() {
+  const cookieStore = await cookies();
+  if (cookieStore.get(ADMIN_SESSION_COOKIE)?.value === "1") {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gradient-to-b from-slate-50 to-indigo-50/80">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
         <div className="mb-10 text-center">
           <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">
-            MeriGadi
+            MeriGadi Admin
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
             Sign in
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Enter your login details to continue.
+            Use your admin credentials to continue.
           </p>
         </div>
 
