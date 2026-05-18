@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 type MembershipCounts = {
   user: number;
@@ -17,6 +17,28 @@ type PendingVerificationUser = {
   membershipType: "user" | "pro" | "pro_plus";
 };
 
+type WinnersUser = {
+  id: string;
+  user_id: string;
+  date: string;
+  slot: string;
+  image: string | null;
+  created_at: string;
+  users: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+};
+
+type city = {
+  id: number;
+  city: string;
+  state: string;
+  district: string | null;
+  is_active: boolean;
+};
+
 type DashboardTabsProps = {
   totalUsers: number;
   membership: MembershipCounts;
@@ -26,9 +48,29 @@ type DashboardTabsProps = {
   rejectedPartialUsers: PendingVerificationUser[];
   notStartedVerificationUsers: PendingVerificationUser[];
   showRlsHint: boolean;
+  winnerUser: WinnersUser[];
+  cities: city[];
+  // winners: {
+  //   id: string;
+  //   date: string;
+  //   slot: string;
+  //   image: string | null;
+  //   created_at: string;
+  //   users: {
+  //     first_name: string;
+  //     last_name: string;
+  //     phone: string;
+  //   } | null;
+  // }[];
 };
 
-type TabKey = "overview" | "pending" | "rejected-partial" | "not-started";
+type TabKey =
+  | "overview"
+  | "pending"
+  | "rejected-partial"
+  | "not-started"
+  | "winners"
+  | "cities";
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   if (value === "pro_plus") return "Pro Plus";
@@ -45,12 +87,49 @@ export function DashboardTabs({
   rejectedPartialUsers,
   notStartedVerificationUsers,
   showRlsHint,
+  winnerUser,
+  cities,
 }: DashboardTabsProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const pendingCount = pendingVerificationUsers.length;
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+
+  const [winnerUsers, setWinnerUsers] = useState<PendingVerificationUser[]>([]);
+
+  const [selectedUserId, setSelectedUserId] = useState("");
+
+  const [winnerDate, setWinnerDate] = useState("");
+
+  const [winnerSlot, setWinnerSlot] = useState("");
+
+  const [winnerImage, setWinnerImage] = useState("");
+
+  const [savingWinner, setSavingWinner] = useState(false);
+
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const [editingWinnerId, setEditingWinnerId] = useState<string | null>(null);
+
+  const [showCityModal, setShowCityModal] = useState(false);
+
+  const [editingCityId, setEditingCityId] = useState<number | null>(null);
+
+  const [cityName, setCityName] = useState("");
+
+  const [stateName, setStateName] = useState("");
+
+  const [districtName, setDistrictName] = useState("");
+
+  const [savingCity, setSavingCity] = useState(false);
+
+  const [deletingCityId, setDeletingCityId] = useState<number | null>(null);
+
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const [errorMessage, setErrorMessage] = useState("");
 
   const overviewCards = useMemo(
     () => [
@@ -107,8 +186,190 @@ export function DashboardTabs({
     router.refresh();
   };
 
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const response = await fetch("/api/admin/users");
+
+        const data = await response.json();
+
+        setWinnerUsers(data.users ?? []);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadUsers();
+  }, []);
+
+  const createWinner = async () => {
+    try {
+      setSavingWinner(true);
+
+      const url = editingWinnerId
+        ? `/api/admin/winners/${editingWinnerId}`
+        : "/api/admin/winners";
+
+      const method = editingWinnerId ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: selectedUserId,
+          date: winnerDate,
+          slot: winnerSlot,
+          image: winnerImage,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      setShowWinnerModal(false);
+
+      setSelectedUserId("");
+      setWinnerDate("");
+      setWinnerSlot("");
+      setWinnerImage("");
+      setEditingWinnerId(null);
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSavingWinner(false);
+    }
+  };
+
+  const deleteWinner = async (id: string) => {
+    const confirmDelete = window.confirm("Delete this winner?");
+
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`/api/admin/winners/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const createCity = async () => {
+    try {
+      setSavingCity(true);
+
+      setErrorMessage("");
+
+      const response = await fetch("/api/admin/cities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          city: cityName,
+          state: stateName,
+          district: districtName,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      setSuccessMessage(
+        editingCityId
+          ? "City updated successfully"
+          : "City created successfully",
+      );
+
+      setShowCityModal(false);
+
+      setCityName("");
+      setStateName("");
+      setDistrictName("");
+
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 3000);
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+
+      setErrorMessage("Something went wrong");
+
+      setTimeout(() => {
+        setErrorMessage("");
+      }, 3000);
+    } finally {
+      setSavingCity(false);
+    }
+  };
+
+  const deleteCity = async (id: number) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this city?",
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      setDeletingCityId(id);
+
+      setErrorMessage("");
+
+      const response = await fetch(`/api/admin/cities/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      setSuccessMessage("City deleted successfully");
+
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 3000);
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+
+      setErrorMessage("Failed to delete city");
+
+      setTimeout(() => {
+        setErrorMessage("");
+      }, 3000);
+    } finally {
+      setDeletingCityId(null);
+    }
+  };
+
   return (
     <section>
+      {successMessage ? (
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+          {successMessage}
+        </div>
+      ) : null}
+
+      {errorMessage ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {errorMessage}
+        </div>
+      ) : null}
       <header className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -180,6 +441,26 @@ export function DashboardTabs({
           onClick={() => setActiveTab("not-started")}
         >
           Not Started ({notStartedCount})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "winners"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("winners")}
+        >
+          Winners ({winnerUser.length})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "cities"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("cities")}
+        >
+          Cities ({cities.length || 0})
         </button>
       </div>
 
@@ -318,7 +599,7 @@ export function DashboardTabs({
             </table>
           </div>
         </div>
-      ) : (
+      ) : activeTab === "not-started" ? (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -373,7 +654,493 @@ export function DashboardTabs({
             </table>
           </div>
         </div>
+      ) : activeTab === "cities" ? (
+        <>
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => {
+                setEditingCityId(null);
+
+                setCityName("");
+                setStateName("");
+                setDistrictName("");
+
+                setShowCityModal(true);
+              }}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Add City
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      City
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      State
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      District
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Status
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {(cities?.length || 0) === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={5}
+                      >
+                        No cities found.
+                      </td>
+                    </tr>
+                  ) : (
+                    (cities ?? []).map((city) => (
+                      <tr key={city.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {city.city}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600">
+                          {city.state}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600">
+                          {city.district || "-"}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              city.is_active
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {city.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingCityId(city.id);
+
+                                setCityName(city.city);
+
+                                setStateName(city.state);
+
+                                setDistrictName(city.district || "");
+
+                                setShowCityModal(true);
+                              }}
+                              className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => deleteCity(city.id)}
+                              disabled={deletingCityId === city.id}
+                              className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
+                            >
+                              {deletingCityId === city.id ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => {
+                setEditingWinnerId(null);
+
+                setSelectedUserId("");
+                setWinnerDate("");
+                setWinnerSlot("");
+                setWinnerImage("");
+
+                setShowWinnerModal(true);
+              }}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              {editingWinnerId ? "Edit Winner" : "Add Winner"}{" "}
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      User
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Phone
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Date
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Slot
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Image
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {winnerUser.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={5}
+                      >
+                        No winners found.
+                      </td>
+                    </tr>
+                  ) : (
+                    winnerUser.map((winner) => (
+                      <tr key={winner.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {winner.users?.first_name} {winner.users?.last_name}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600">
+                          {winner.users?.phone}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600">
+                          {winner.date}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                            {winner.slot}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {winner.image ? (
+                            <img
+                              src={winner.image}
+                              alt="winner"
+                              className="aspect-[10/7] w-28 rounded-xl object-cover"
+                            />
+                          ) : (
+                            <span className="text-slate-400">No Image</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingWinnerId(winner.id);
+
+                                setSelectedUserId(winner.user_id ?? "");
+
+                                setWinnerDate(winner.date);
+
+                                setWinnerSlot(winner.slot);
+
+                                setWinnerImage(winner.image ?? "");
+
+                                setShowWinnerModal(true);
+                              }}
+                              className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => deleteWinner(winner.id)}
+                              className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
+      {showWinnerModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">
+                {editingWinnerId ? "Edit Winner" : "Add Winner"}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowWinnerModal(false);
+
+                  setEditingWinnerId(null);
+
+                  setSelectedUserId("");
+                  setWinnerDate("");
+                  setWinnerSlot("");
+                  setWinnerImage("");
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Select User
+                </label>
+
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  // className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500"
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select user</option>
+
+                  {winnerUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.fullName} ({user.phone})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Date
+                </label>
+
+                <input
+                  type="date"
+                  value={winnerDate}
+                  onChange={(e) => setWinnerDate(e.target.value)}
+                  // className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500"
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Slot
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="Enter slot"
+                  value={winnerSlot}
+                  onChange={(e) => setWinnerSlot(e.target.value)}
+                  // className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500"
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Image URL
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="Enter image url"
+                  value={winnerImage}
+                  onChange={(e) => setWinnerImage(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500"
+                />
+              </div> */}
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Upload Image
+                </label>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+
+                    if (!file) return;
+
+                    try {
+                      setUploadingImage(true);
+
+                      const formData = new FormData();
+
+                      formData.append("file", file);
+
+                      const response = await fetch("/api/admin/upload", {
+                        method: "POST",
+                        body: formData,
+                      });
+
+                      const data = await response.json();
+
+                      console.log("UPLOAD RESPONSE", data);
+
+                      setWinnerImage(data.url);
+                    } catch (error) {
+                      console.error(error);
+                    } finally {
+                      setUploadingImage(false);
+                    }
+                  }}
+                  // className="block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-indigo-700"
+                />
+
+                {winnerImage ? (
+                  <img
+                    src={winnerImage}
+                    alt="preview"
+                    className="mt-4 aspect-[10/7] w-full rounded-2xl object-cover"
+                  />
+                ) : null}
+              </div>
+
+              <button
+                onClick={createWinner}
+                disabled={
+                  savingWinner ||
+                  uploadingImage ||
+                  !selectedUserId ||
+                  !winnerDate ||
+                  !winnerSlot ||
+                  !winnerImage
+                }
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {uploadingImage
+                  ? "Uploading Image..."
+                  : savingWinner
+                    ? "Saving..."
+                    : editingWinnerId
+                      ? "Update Winner"
+                      : "Create Winner"}{" "}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showCityModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">
+                {editingCityId ? "Edit City" : "Add City"}
+              </h2>
+
+              <button
+                onClick={() => {
+                  setShowCityModal(false);
+
+                  setEditingCityId(null);
+
+                  setCityName("");
+                  setStateName("");
+                  setDistrictName("");
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  City
+                </label>
+
+                <input
+                  type="text"
+                  value={cityName}
+                  onChange={(e) => setCityName(e.target.value)}
+                  placeholder="Enter city"
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  State
+                </label>
+
+                <input
+                  type="text"
+                  value={stateName}
+                  onChange={(e) => setStateName(e.target.value)}
+                  placeholder="Enter state"
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  District
+                </label>
+
+                <input
+                  type="text"
+                  value={districtName}
+                  onChange={(e) => setDistrictName(e.target.value)}
+                  placeholder="Enter district"
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <button
+                onClick={createCity}
+                disabled={savingCity || !cityName || !stateName}
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
+              >
+                {editingCityId ? "Update City" : "Create City"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

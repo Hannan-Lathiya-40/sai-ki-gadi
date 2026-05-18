@@ -50,7 +50,9 @@ type PendingVerificationUser = {
   membershipType: "user" | "pro" | "pro_plus";
 };
 
-function normalizeMembership(value: string | null): "user" | "pro" | "pro_plus" {
+function normalizeMembership(
+  value: string | null,
+): "user" | "pro" | "pro_plus" {
   if (value === "pro" || value === "pro_plus") return value;
   return "user";
 }
@@ -92,7 +94,9 @@ function hasAllRequiredDocs(row: IdentityDocRow): boolean {
     Boolean(row.gst_uploaded);
   if (legacyFlags) return true;
 
-  return Boolean(row.aadhaar_file_path && row.pan_file_path && row.gst_file_path);
+  return Boolean(
+    row.aadhaar_file_path && row.pan_file_path && row.gst_file_path,
+  );
 }
 
 function fullNameOf(user: UserRow): string {
@@ -107,18 +111,24 @@ export default async function DashboardPage() {
   const [{ data: users, error: usersError }, docsResult] = await Promise.all([
     supabaseAdmin
       .from("users")
-      .select("id, first_name, last_name, phone, email, membership_type, verified"),
+      .select(
+        "id, first_name, last_name, phone, email, membership_type, verified",
+      ),
     (async () => {
       // Prefer current mobile schema columns.
-      const modern = await supabaseAdmin.from("user_identity_documents").select(
-        "user_id, aadhaar_number, driving_license_front_path, driving_license_back_path, aadhaar_front_path, aadhaar_back_path",
-      );
+      const modern = await supabaseAdmin
+        .from("user_identity_documents")
+        .select(
+          "user_id, aadhaar_number, driving_license_front_path, driving_license_back_path, aadhaar_front_path, aadhaar_back_path",
+        );
       if (!modern.error) return modern;
 
       // Fallback to schema.sql columns.
-      return supabaseAdmin.from("user_identity_documents").select(
-        "user_id, aadhaar_number, aadhaar_uploaded, pan_uploaded, gst_uploaded, aadhaar_file_path, pan_file_path, gst_file_path",
-      );
+      return supabaseAdmin
+        .from("user_identity_documents")
+        .select(
+          "user_id, aadhaar_number, aadhaar_uploaded, pan_uploaded, gst_uploaded, aadhaar_file_path, pan_file_path, gst_file_path",
+        );
     })(),
   ]);
   const { data: docs, error: docsError } = docsResult;
@@ -127,7 +137,9 @@ export default async function DashboardPage() {
     throw new Error(`Unable to fetch users: ${usersError.message}`);
   }
   if (docsError) {
-    throw new Error(`Unable to fetch verification documents: ${docsError.message}`);
+    throw new Error(
+      `Unable to fetch verification documents: ${docsError.message}`,
+    );
   }
 
   const allUsers: UserRow[] = users ?? [];
@@ -167,7 +179,8 @@ export default async function DashboardPage() {
       if (user.verified) return false;
       const row = docsByUserId.get(user.id);
       if (!row) return false;
-      const eligibleForPending = hasAllRequiredDocs(row) && hasAadhaarNumber(row);
+      const eligibleForPending =
+        hasAllRequiredDocs(row) && hasAadhaarNumber(row);
       return hasAnyUploadedDocs(row) && !eligibleForPending;
     })
     .map((user) => ({
@@ -187,6 +200,25 @@ export default async function DashboardPage() {
       membershipType: normalizeMembership(user.membership_type),
     }));
 
+  const { data: winners } = await supabaseAdmin
+    .from("winners")
+    .select(
+      `
+    *,
+    users (
+      first_name,
+      last_name,
+      phone
+    )
+  `,
+    )
+    .order("created_at", { ascending: false });
+
+  const { data: cities } = await supabaseAdmin
+    .from("cities")
+    .select("*")
+    .order("city", { ascending: true });
+
   return (
     <div className="min-h-screen bg-slate-100">
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -199,6 +231,8 @@ export default async function DashboardPage() {
           rejectedPartialUsers={rejectedPartialUsers}
           notStartedVerificationUsers={notStartedVerificationUsers}
           showRlsHint={!usingServiceRole}
+          winnerUser={winners ?? []}
+          cities={cities ?? []}
         />
       </main>
     </div>
