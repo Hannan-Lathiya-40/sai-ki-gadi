@@ -1,32 +1,29 @@
-import { NextResponse } from "next/server";
-
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-type Params = {
-  params: {
+type Context = {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
-export async function PUT(
-  req: Request,
-  { params }: Params,
-) {
+export async function PUT(req: NextRequest, context: Context) {
   try {
     const body = await req.json();
 
     const { image, status } = body;
 
-    const { data, error } =
-      await supabaseAdmin
-        .from("sliders")
-        .update({
-          image,
-          status,
-        })
-        .eq("id", params.id)
-        .select()
-        .single();
+    const { id } = await context.params;
+
+    const { data, error } = await supabaseAdmin
+      .from("sliders")
+      .update({
+        image,
+        status,
+      })
+      .eq("id", id)
+      .select()
+      .single();
 
     if (error) {
       return NextResponse.json(
@@ -52,16 +49,11 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  req: Request,
-  { params }: Params,
-) {
+export async function DELETE(req: NextRequest, context: Context) {
   try {
-    const { error } =
-      await supabaseAdmin
-        .from("sliders")
-        .delete()
-        .eq("id", params.id);
+    const { id } = await context.params;
+
+    const { error } = await supabaseAdmin.from("sliders").delete().eq("id", id);
 
     if (error) {
       return NextResponse.json(
