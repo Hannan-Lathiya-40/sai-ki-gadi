@@ -1,5 +1,6 @@
 "use client";
 
+import App from "next/app";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 
@@ -31,6 +32,24 @@ type WinnersUser = {
   } | null;
 };
 
+type AppUser = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  email: string | null;
+  membership_type: string | null;
+  verified: boolean | null;
+  status: boolean | null;
+};
+
+type Slider = {
+  id: string;
+  image: string;
+  status: boolean;
+  created_at: string;
+};
+
 type city = {
   id: number;
   city: string;
@@ -50,6 +69,8 @@ type DashboardTabsProps = {
   showRlsHint: boolean;
   winnerUser: WinnersUser[];
   cities: city[];
+  sliders: Slider[];
+  users: AppUser[];
   // winners: {
   //   id: string;
   //   date: string;
@@ -70,7 +91,9 @@ type TabKey =
   | "rejected-partial"
   | "not-started"
   | "winners"
-  | "cities";
+  | "cities"
+  | "sliders"
+  | "users";
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   if (value === "pro_plus") return "Pro Plus";
@@ -89,6 +112,8 @@ export function DashboardTabs({
   showRlsHint,
   winnerUser,
   cities,
+  sliders,
+  users,
 }: DashboardTabsProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -130,6 +155,16 @@ export function DashboardTabs({
   const [successMessage, setSuccessMessage] = useState("");
 
   const [errorMessage, setErrorMessage] = useState("");
+
+  const [showSliderModal, setShowSliderModal] = useState(false);
+
+  const [sliderImage, setSliderImage] = useState("");
+
+  const [sliderStatus, setSliderStatus] = useState(true);
+
+  const [editingSliderId, setEditingSliderId] = useState<string | null>(null);
+
+  const [savingSlider, setSavingSlider] = useState(false);
 
   const overviewCards = useMemo(
     () => [
@@ -252,6 +287,113 @@ export function DashboardTabs({
 
     try {
       const response = await fetch(`/api/admin/winners/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const createSlider = async () => {
+    try {
+      setSavingSlider(true);
+
+      const url = editingSliderId
+        ? `/api/admin/sliders/${editingSliderId}`
+        : "/api/admin/sliders";
+
+      const method = editingSliderId ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image: sliderImage,
+          status: sliderStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      setShowSliderModal(false);
+
+      setSliderImage("");
+
+      setSliderStatus(true);
+
+      setEditingSliderId(null);
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSavingSlider(false);
+    }
+  };
+
+  const deleteSlider = async (id: string) => {
+    const confirmDelete = window.confirm("Delete this slider?");
+
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`/api/admin/sliders/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const toggleUserStatus = async (id: string, status: boolean) => {
+    try {
+      const response = await fetch(`/api/admin/users/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: !status,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+
+        console.log("USER STATUS ERROR:", errorData);
+
+        throw new Error("Failed");
+      }
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    const confirmDelete = window.confirm("Delete this user?");
+
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`/api/admin/users/${id}`, {
         method: "DELETE",
       });
 
@@ -461,6 +603,26 @@ export function DashboardTabs({
           onClick={() => setActiveTab("cities")}
         >
           Cities ({cities.length || 0})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "sliders"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("sliders")}
+        >
+          Sliders ({sliders?.length || 0})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "users"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("users")}
+        >
+          Users ({users?.length || 0})
         </button>
       </div>
 
@@ -761,7 +923,240 @@ export function DashboardTabs({
                               disabled={deletingCityId === city.id}
                               className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
                             >
-                              {deletingCityId === city.id ? "Deleting..." : "Delete"}
+                              {deletingCityId === city.id
+                                ? "Deleting..."
+                                : "Delete"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : activeTab === "users" ? (
+        <>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-fixed divide-y divide-slate-200 text-sm">
+                {" "}
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="w-[220px] px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      User
+                    </th>
+
+                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Phone
+                    </th>
+
+                    <th className="w-[240px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Email
+                    </th>
+
+                    <th className="w-[130px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Plan
+                    </th>
+
+                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Verification
+                    </th>
+
+                    <th className="w-[120px] px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Status
+                    </th>
+
+                    <th className="w-[140px] px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {users?.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={7}
+                      >
+                        No users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map((user) => (
+                      <tr key={user.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {user.first_name ?? "—"} {user.last_name ?? "—"}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.phone ?? "—"}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.email ?? "—"}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                            {user.membership_type ?? "—"}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              user.verified
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {user.verified ? "Verified" : "Pending"}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              user.status
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {user.status ? "ON" : "OFF"}{" "}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() =>
+                                toggleUserStatus(user.id, user.status ?? false)
+                              }
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                                user.status ? "bg-emerald-500" : "bg-slate-300"
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                                  user.status
+                                    ? "translate-x-6"
+                                    : "translate-x-1"
+                                }`}
+                              />
+                            </button>
+
+                            <button
+                              onClick={() => deleteUser(user.id)}
+                              className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : activeTab === "sliders" ? (
+        <>
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => {
+                setEditingSliderId(null);
+
+                setSliderImage("");
+
+                setSliderStatus(true);
+
+                setShowSliderModal(true);
+              }}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Add Slider
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Image
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Status
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {sliders?.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={3}
+                      >
+                        No sliders found.
+                      </td>
+                    </tr>
+                  ) : (
+                    (sliders ?? []).map((slider) => (
+                      <tr key={slider.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <img
+                            src={slider.image}
+                            alt="slider"
+                            className="aspect-[10/5] w-40 rounded-xl object-cover"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              slider.status
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {slider.status ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingSliderId(slider.id);
+
+                                setSliderImage(slider.image);
+
+                                setSliderStatus(slider.status);
+
+                                setShowSliderModal(true);
+                              }}
+                              className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => deleteSlider(slider.id)}
+                              className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
+                            >
+                              Delete
                             </button>
                           </div>
                         </td>
@@ -1058,6 +1453,104 @@ export function DashboardTabs({
                     : editingWinnerId
                       ? "Update Winner"
                       : "Create Winner"}{" "}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showSliderModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">
+                {editingSliderId ? "Edit Slider" : "Add Slider"}
+              </h2>
+
+              <button
+                onClick={() => {
+                  setShowSliderModal(false);
+
+                  setEditingSliderId(null);
+
+                  setSliderImage("");
+
+                  setSliderStatus(true);
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Upload Image
+                </label>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+
+                    if (!file) return;
+
+                    try {
+                      setUploadingImage(true);
+
+                      const formData = new FormData();
+
+                      formData.append("file", file);
+
+                      const response = await fetch("/api/admin/upload", {
+                        method: "POST",
+                        body: formData,
+                      });
+
+                      const data = await response.json();
+
+                      setSliderImage(data.url);
+                    } catch (error) {
+                      console.error(error);
+                    } finally {
+                      setUploadingImage(false);
+                    }
+                  }}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                />
+
+                {sliderImage ? (
+                  <img
+                    src={sliderImage}
+                    alt="preview"
+                    className="mt-4 aspect-[10/5] w-full rounded-2xl object-cover"
+                  />
+                ) : null}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={sliderStatus}
+                  onChange={(e) => setSliderStatus(e.target.checked)}
+                />
+
+                <span className="text-sm font-semibold text-slate-700">
+                  Active Status
+                </span>
+              </div>
+
+              <button
+                onClick={createSlider}
+                disabled={savingSlider || uploadingImage || !sliderImage}
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
+              >
+                {savingSlider
+                  ? "Saving..."
+                  : editingSliderId
+                    ? "Update Slider"
+                    : "Create Slider"}
               </button>
             </div>
           </div>

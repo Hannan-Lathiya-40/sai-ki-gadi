@@ -19,6 +19,7 @@ type UserRow = {
   email: string | null;
   membership_type: string | null;
   verified: boolean | null;
+  status: boolean | null;
 };
 
 type IdentityDocRow = {
@@ -112,7 +113,7 @@ export default async function DashboardPage() {
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, membership_type, verified",
+        "id, first_name, last_name, phone, email, membership_type, verified, status",
       ),
     (async () => {
       // Prefer current mobile schema columns.
@@ -219,6 +220,13 @@ export default async function DashboardPage() {
     .select("*")
     .order("city", { ascending: true });
 
+  const { data: sliders } = await supabaseAdmin
+    .from("sliders")
+    .select("*")
+    .order("created_at", {
+      ascending: false,
+    });
+
   return (
     <div className="min-h-screen bg-slate-100">
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -233,6 +241,8 @@ export default async function DashboardPage() {
           showRlsHint={!usingServiceRole}
           winnerUser={winners ?? []}
           cities={cities ?? []}
+          sliders={sliders ?? []}
+          users={allUsers ?? []}
         />
       </main>
     </div>
