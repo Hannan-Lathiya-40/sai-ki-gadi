@@ -20,6 +20,7 @@ type UserRow = {
   membership_type: string | null;
   verified: boolean | null;
   status: boolean | null;
+  verification_status: string | null;
 };
 
 type IdentityDocRow = {
@@ -113,7 +114,7 @@ export default async function DashboardPage() {
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, membership_type, verified, status",
+        "id, first_name, last_name, phone, email, membership_type, verified, status, verification_status",
       ),
     (async () => {
       // Prefer current mobile schema columns.
@@ -163,10 +164,11 @@ export default async function DashboardPage() {
   );
   const pendingVerificationUsers: PendingVerificationUser[] = allUsers
     .filter((user) => {
-      if (user.verified) return false;
       const row = docsByUserId.get(user.id);
-      if (!row) return false;
-      return hasAllRequiredDocs(row) && hasAadhaarNumber(row);
+
+      return (
+        user.verification_status === "pending" && row && hasAnyUploadedDocs(row)
+      );
     })
     .map((user) => ({
       id: user.id,
@@ -176,14 +178,7 @@ export default async function DashboardPage() {
       membershipType: normalizeMembership(user.membership_type),
     }));
   const rejectedPartialUsers: PendingVerificationUser[] = allUsers
-    .filter((user) => {
-      if (user.verified) return false;
-      const row = docsByUserId.get(user.id);
-      if (!row) return false;
-      const eligibleForPending =
-        hasAllRequiredDocs(row) && hasAadhaarNumber(row);
-      return hasAnyUploadedDocs(row) && !eligibleForPending;
-    })
+    .filter((user) => user.verification_status === "rejected")
     .map((user) => ({
       id: user.id,
       fullName: fullNameOf(user),
@@ -192,7 +187,12 @@ export default async function DashboardPage() {
       membershipType: normalizeMembership(user.membership_type),
     }));
   const notStartedVerificationUsers: PendingVerificationUser[] = allUsers
-    .filter((user) => !user.verified && !uploadedDocUserIds.has(user.id))
+    .filter((user) => {
+      return (
+        user.verification_status === "pending" &&
+        !uploadedDocUserIds.has(user.id)
+      );
+    })
     .map((user) => ({
       id: user.id,
       fullName: fullNameOf(user),

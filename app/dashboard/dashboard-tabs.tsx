@@ -942,7 +942,6 @@ export function DashboardTabs({
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="min-w-full table-fixed divide-y divide-slate-200 text-sm">
-                {" "}
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="w-[220px] px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
