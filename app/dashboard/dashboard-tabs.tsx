@@ -166,6 +166,8 @@ export function DashboardTabs({
 
   const [savingSlider, setSavingSlider] = useState(false);
 
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+
   const overviewCards = useMemo(
     () => [
       {
@@ -363,6 +365,8 @@ export function DashboardTabs({
 
   const toggleUserStatus = async (id: string, status: boolean) => {
     try {
+      setUpdatingUserId(id);
+
       const response = await fetch(`/api/admin/users/${id}`, {
         method: "PUT",
         headers: {
@@ -381,9 +385,11 @@ export function DashboardTabs({
         throw new Error("Failed");
       }
 
-      router.refresh();
+      await router.refresh();
     } catch (error) {
       console.error(error);
+    } finally {
+      setUpdatingUserId(null);
     }
   };
 
@@ -985,25 +991,29 @@ export function DashboardTabs({
                     </tr>
                   ) : (
                     users.map((user) => (
-                      <tr key={user.id} className="hover:bg-slate-50">
+                      <tr
+                        key={user.id}
+                        className={`hover:bg-slate-50 transition-all ${
+                          updatingUserId === user.id
+                            ? "opacity-50 pointer-events-none"
+                            : ""
+                        }`}
+                      >
+                        {" "}
                         <td className="px-4 py-3 font-semibold text-slate-800">
                           {user.first_name ?? "—"} {user.last_name ?? "—"}
                         </td>
-
                         <td className="px-4 py-3 text-slate-600">
                           {user.phone ?? "—"}
                         </td>
-
                         <td className="px-4 py-3 text-slate-600">
                           {user.email ?? "—"}
                         </td>
-
                         <td className="px-4 py-3">
                           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
                             {user.membership_type ?? "—"}
                           </span>
                         </td>
-
                         <td className="px-4 py-3">
                           <span
                             className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -1015,36 +1025,50 @@ export function DashboardTabs({
                             {user.verified ? "Verified" : "Pending"}
                           </span>
                         </td>
-
                         <td className="px-4 py-3">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              user.status
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {user.status ? "ON" : "OFF"}{" "}
-                          </span>
+                          {updatingUserId === user.id ? (
+                            <span className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+                              <span className="h-2 w-2 animate-pulse rounded-full bg-blue-600" />
+                              Updating...
+                            </span>
+                          ) : (
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                user.status
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {user.status ? "ON" : "OFF"}
+                            </span>
+                          )}
                         </td>
-
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <button
+                              disabled={updatingUserId === user.id}
                               onClick={() =>
                                 toggleUserStatus(user.id, user.status ?? false)
                               }
                               className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
                                 user.status ? "bg-emerald-500" : "bg-slate-300"
+                              } ${
+                                updatingUserId === user.id
+                                  ? "cursor-not-allowed opacity-70"
+                                  : ""
                               }`}
                             >
-                              <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                                  user.status
-                                    ? "translate-x-6"
-                                    : "translate-x-1"
-                                }`}
-                              />
+                              {updatingUserId === user.id ? (
+                                <span className="mx-auto h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                              ) : (
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                                    user.status
+                                      ? "translate-x-6"
+                                      : "translate-x-1"
+                                  }`}
+                                />
+                              )}
                             </button>
 
                             <button
@@ -1372,18 +1396,18 @@ export function DashboardTabs({
               </div>
 
               {/* <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">
-                  Image URL
-                </label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">
+                    Image URL
+                  </label>
 
-                <input
-                  type="text"
-                  placeholder="Enter image url"
-                  value={winnerImage}
-                  onChange={(e) => setWinnerImage(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500"
-                />
-              </div> */}
+                  <input
+                    type="text"
+                    placeholder="Enter image url"
+                    value={winnerImage}
+                    onChange={(e) => setWinnerImage(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500"
+                  />
+                </div> */}
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
                   Upload Image
