@@ -43,6 +43,70 @@ type AppUser = {
   status: boolean | null;
 };
 
+type Requirement = {
+  id: string;
+  source_city: string;
+  source_state: string;
+  destination_city: string;
+  destination_state: string;
+  car_type: string;
+  trip_type: string;
+  price: string;
+  journey_start_at: string;
+  ride_type: string;
+  created_at: string;
+  users: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+  assigned_user: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+
+  booked: boolean;
+  booking_remark: string | null;
+};
+
+type Exchange = {
+  id: string;
+
+  available_source_city: string;
+  available_source_state: string;
+  available_destination_city: string;
+  available_destination_state: string;
+  available_car_type: string;
+  available_trip_type: string;
+  available_at: string;
+
+  expected_source_city: string;
+  expected_source_state: string;
+  expected_destination_city: string;
+  expected_destination_state: string;
+  expected_car_type: string;
+  expected_trip_type: string;
+  expected_at: string;
+
+  description: string | null;
+  created_at: string;
+
+  booked: boolean;
+
+  users: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+
+  exchanged_user: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+};
+
 type Slider = {
   id: string;
   image: string;
@@ -71,6 +135,8 @@ type DashboardTabsProps = {
   cities: city[];
   sliders: Slider[];
   users: AppUser[];
+  requirements: Requirement[];
+  exchanges: Exchange[];
   // winners: {
   //   id: string;
   //   date: string;
@@ -93,7 +159,9 @@ type TabKey =
   | "winners"
   | "cities"
   | "sliders"
-  | "users";
+  | "users"
+  | "requirements"
+  | "exchanges";
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   if (value === "pro_plus") return "Pro Plus";
@@ -114,9 +182,27 @@ export function DashboardTabs({
   cities,
   sliders,
   users,
+  requirements,
+  exchanges,
 }: DashboardTabsProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [reqSearch, setReqSearch] = useState("");
+  const [reqStatus, setReqStatus] = useState("all");
+  const [reqCarType, setReqCarType] = useState("all");
+  const [reqTripType, setReqTripType] = useState("all");
+  const [reqSourceCity, setReqSourceCity] = useState("all");
+  const [reqDestinationCity, setReqDestinationCity] = useState("all");
+  const [exchangeSearch, setExchangeSearch] = useState("");
+  const [exchangeStatus, setExchangeStatus] = useState("all");
+  const [exchangeCarType, setExchangeCarType] = useState("all");
+  const [exchangeSourceCity, setExchangeSourceCity] = useState("all");
+  const [exchangeDestinationCity, setExchangeDestinationCity] = useState("all");
+  const [reqFromDate, setReqFromDate] = useState("");
+  const [reqToDate, setReqToDate] = useState("");
+
+  const [exchangeFromDate, setExchangeFromDate] = useState("");
+  const [exchangeToDate, setExchangeToDate] = useState("");
   const pendingCount = pendingVerificationUsers.length;
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
@@ -168,42 +254,168 @@ export function DashboardTabs({
 
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
+  const sourceCities = [
+    ...new Set(requirements?.map((r) => r.source_city).filter(Boolean)),
+  ];
+
+  const destinationCities = [
+    ...new Set(requirements?.map((r) => r.destination_city).filter(Boolean)),
+  ];
+
+  const exchangeSourceCities = [
+    ...new Set(exchanges?.map((e) => e.available_source_city).filter(Boolean)),
+  ];
+
+  const exchangeDestinationCities = [
+    ...new Set(
+      exchanges?.map((e) => e.available_destination_city).filter(Boolean),
+    ),
+  ];
+
+
+  const cityOptions = [...new Set((cities ?? []).map((c) => c.city))];
+
+  const requirementCarTypes = [
+    ...new Set(requirements?.map((item) => item.car_type).filter(Boolean)),
+  ];
+  const filteredRequirements = requirements?.filter((item) => {
+    const search = reqSearch.toLowerCase();
+
+    const matchesSearch =
+      `${item.users?.first_name ?? ""} ${item.users?.last_name ?? ""}`
+        .toLowerCase()
+        .includes(search) ||
+      (item.users?.phone ?? "").toLowerCase().includes(search) ||
+      (item.source_city ?? "").toLowerCase().includes(search) ||
+      (item.destination_city ?? "").toLowerCase().includes(search);
+
+    const matchesStatus =
+      reqStatus === "all"
+        ? true
+        : reqStatus === "booked"
+          ? item.booked
+          : !item.booked;
+
+    const matchesCar = reqCarType === "all" || item.car_type === reqCarType;
+
+    const matchesTrip = reqTripType === "all" || item.trip_type === reqTripType;
+
+    const matchesSource =
+      reqSourceCity === "all" || item.source_city === reqSourceCity;
+
+    const matchesDestination =
+      reqDestinationCity === "all" ||
+      item.destination_city === reqDestinationCity;
+
+    const matchesDate =
+      (!reqFromDate ||
+        new Date(item.journey_start_at) >= new Date(reqFromDate)) &&
+      (!reqToDate ||
+        new Date(item.journey_start_at) <= new Date(reqToDate + "T23:59:59"));
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesCar &&
+      matchesTrip &&
+      matchesSource &&
+      matchesDestination &&
+      matchesDate
+    );
+  });
+
+  const exchangeCarTypes = [
+    ...new Set(
+      exchanges?.map((item) => item.available_car_type).filter(Boolean),
+    ),
+  ];
+
+  const filteredExchanges = exchanges?.filter((item) => {
+    const search = exchangeSearch.toLowerCase();
+
+    const matchesSearch =
+      `${item.users?.first_name ?? ""} ${item.users?.last_name ?? ""}`
+        .toLowerCase()
+        .includes(search) ||
+      (item.users?.phone ?? "").toLowerCase().includes(search) ||
+      (item.available_source_city ?? "").toLowerCase().includes(search) ||
+      (item.available_destination_city ?? "").toLowerCase().includes(search);
+
+    const matchesStatus =
+      exchangeStatus === "all"
+        ? true
+        : exchangeStatus === "booked"
+          ? item.booked
+          : !item.booked;
+
+    const matchesCar =
+      exchangeCarType === "all" || item.available_car_type === exchangeCarType;
+
+    const matchesSource =
+      exchangeSourceCity === "all" ||
+      item.available_source_city === exchangeSourceCity;
+
+    const matchesDestination =
+      exchangeDestinationCity === "all" ||
+      item.available_destination_city === exchangeDestinationCity;
+
+    const matchesDate =
+      (!exchangeFromDate ||
+        new Date(item.created_at) >= new Date(exchangeFromDate)) &&
+      (!exchangeToDate ||
+        new Date(item.created_at) <= new Date(exchangeToDate + "T23:59:59"));
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesCar &&
+      matchesSource &&
+      matchesDestination &&
+      matchesDate
+    );
+  });
+
   const overviewCards = useMemo(
     () => [
       {
         label: "Total users",
         value: totalUsers,
         subtitle: "All signed-up accounts",
+        tab: "users",
         accent: "border-slate-900 bg-slate-900 text-white shadow-slate-300/40",
       },
       {
         label: "User",
         value: membership.user,
         subtitle: "Standard membership",
+        tab: "users",
         accent: "border-slate-200 bg-white text-slate-900",
       },
       {
         label: "Pro",
         value: membership.pro,
         subtitle: "Pro membership",
+        tab: "users",
         accent: "border-indigo-100 bg-indigo-50 text-indigo-700",
       },
       {
         label: "Pro Plus",
         value: membership.pro_plus,
         subtitle: "Pro Plus membership",
+        tab: "users",
         accent: "border-violet-100 bg-violet-50 text-violet-700",
       },
       {
         label: "Verified",
         value: verifiedCount,
         subtitle: "Approved accounts",
+        tab: "pending",
         accent: "border-emerald-100 bg-emerald-50 text-emerald-700",
       },
       {
         label: "Unverified",
         value: unverifiedCount,
         subtitle: "Pending or incomplete",
+        tab: "not-started",
         accent: "border-amber-100 bg-amber-50 text-amber-700",
       },
     ],
@@ -543,7 +755,7 @@ export function DashboardTabs({
       {showRlsHint ? (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Dashboard is using Supabase anon key. With your current RLS policies,
-          admin pages may return no rows. Add{" "}
+          admin pages may return no rows. Add
           <code>SUPABASE_SERVICE_ROLE_KEY</code> in website env for full admin
           visibility.
         </div>
@@ -630,6 +842,26 @@ export function DashboardTabs({
         >
           Users ({users?.length || 0})
         </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "requirements"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("requirements")}
+        >
+          Requirements ({requirements?.length || 0})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "exchanges"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("exchanges")}
+        >
+          Exchanges ({exchanges?.length || 0})
+        </button>
       </div>
 
       {activeTab === "overview" ? (
@@ -637,7 +869,8 @@ export function DashboardTabs({
           {overviewCards.map((card) => (
             <article
               key={card.label}
-              className={`rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${card.accent}`}
+              onClick={() => setActiveTab(card.tab as TabKey)}
+              className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${card.accent}`}
             >
               <p className="text-sm font-semibold opacity-85">{card.label}</p>
               <p className="mt-2 text-3xl font-bold">{card.value}</p>
@@ -999,7 +1232,6 @@ export function DashboardTabs({
                             : ""
                         }`}
                       >
-                        {" "}
                         <td className="px-4 py-3 font-semibold text-slate-800">
                           {user.first_name ?? "—"} {user.last_name ?? "—"}
                         </td>
@@ -1082,6 +1314,433 @@ export function DashboardTabs({
                       </tr>
                     ))
                   )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : activeTab === "requirements" ? (
+        <>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3 overflow-x-auto pb-1">
+              <input
+                type="text"
+                placeholder="Search User / Phone / City"
+                value={reqSearch}
+                onChange={(e) => setReqSearch(e.target.value)}
+                className="h-11 w-72 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 placeholder:text-slate-400"
+              />
+              <select
+                value={reqStatus}
+                onChange={(e) => setReqStatus(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Status</option>
+                <option value="booked">Booked</option>
+                <option value="pending">Pending</option>
+              </select>
+              <select
+                value={reqCarType}
+                onChange={(e) => setReqCarType(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Cars</option>
+
+                {requirementCarTypes.map((car) => (
+                  <option key={car} value={car}>
+                    {car}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={reqTripType}
+                onChange={(e) => setReqTripType(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Trips</option>
+                <option value="one_way">One Way</option>
+                <option value="two_way">Two Way</option>
+              </select>
+              <select
+                value={reqSourceCity}
+                onChange={(e) => setReqSourceCity(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Sources</option>
+
+                {cityOptions.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={reqDestinationCity}
+                onChange={(e) => setReqDestinationCity(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Destinations</option>
+
+                {cityOptions.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={reqFromDate}
+                onChange={(e) => setReqFromDate(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              />
+
+              <input
+                type="date"
+                value={reqToDate}
+                onChange={(e) => setReqToDate(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              />
+
+              <button
+                onClick={() => {
+                  setReqSearch("");
+                  setReqStatus("all");
+                  setReqCarType("all");
+                  setReqTripType("all");
+                  setReqSourceCity("all");
+                  setReqDestinationCity("all");
+                  setReqFromDate("");
+                  setReqToDate("");
+                }}
+                className="h-11 whitespace-nowrap rounded-lg bg-red-500 px-4 text-sm font-semibold text-white hover:bg-red-600"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"></div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-auto">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      User
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Phone
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Source
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Destination
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Car Type
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Trip Type
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Price
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Journey Start
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Status
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Booked By
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Driver Phone
+                    </th>
+
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Created
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {requirements?.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-6 py-10 text-center text-slate-500"
+                      >
+                        No requirements found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRequirements.map((item) => (
+                      <tr key={item.id} className="border-t hover:bg-slate-50">
+                        <td className="px-6 py-4 font-semibold text-slate-900">
+                          {item.users?.first_name} {item.users?.last_name}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.users?.phone}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.source_city}, {item.source_state}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.destination_city}, {item.destination_state}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.car_type}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.trip_type}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          ₹{item.price}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {new Date(item.journey_start_at).toLocaleString()}
+                        </td>
+
+                        <td>
+                          {item.booked ? (
+                            <span className="rounded bg-green-100 px-2 py-1 text-green-700 font-semibold">
+                              Booked
+                            </span>
+                          ) : (
+                            <span className="rounded bg-red-100 px-2 py-1 text-red-700 font-semibold">
+                              Pending
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 font-semibold text-slate-900">
+                          {item.assigned_user
+                            ? `${item.assigned_user.first_name} ${item.assigned_user.last_name}`
+                            : "-"}
+                        </td>
+
+                        <td className="px-6 py-4 font-medium text-slate-900">
+                          {item.assigned_user?.phone ?? "-"}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-500">
+                          {new Date(item.created_at).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : activeTab === "exchanges" ? (
+        <>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3 overflow-x-auto pb-1">
+              <input
+                type="text"
+                placeholder="Search User / Phone / City"
+                value={exchangeSearch}
+                onChange={(e) => setExchangeSearch(e.target.value)}
+                className="h-11 w-72 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 placeholder:text-slate-500"
+              />
+
+              <select
+                value={exchangeStatus}
+                onChange={(e) => setExchangeStatus(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Status</option>
+                <option value="booked">Exchanged</option>
+                <option value="pending">Pending</option>
+              </select>
+
+              <select
+                value={exchangeCarType}
+                onChange={(e) => setExchangeCarType(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Cars</option>
+
+                {exchangeCarTypes.map((car) => (
+                  <option key={car} value={car}>
+                    {car}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={exchangeSourceCity}
+                onChange={(e) => setExchangeSourceCity(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Sources</option>
+
+                {cityOptions.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={exchangeDestinationCity}
+                onChange={(e) => setExchangeDestinationCity(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              >
+                <option value="all">All Destinations</option>
+
+                {cityOptions.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={exchangeFromDate}
+                onChange={(e) => setExchangeFromDate(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              />
+
+              <input
+                type="date"
+                value={exchangeToDate}
+                onChange={(e) => setExchangeToDate(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900"
+              />
+
+              <button
+                onClick={() => {
+                  setReqSearch("");
+                  setReqStatus("all");
+                  setReqCarType("all");
+                  setReqTripType("all");
+                  setReqSourceCity("all");
+                  setReqDestinationCity("all");
+                  setReqFromDate("");
+                  setReqToDate("");
+                }}
+                className="h-11 whitespace-nowrap rounded-lg bg-red-500 px-4 text-sm font-semibold text-white hover:bg-red-600"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-auto">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      User
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Phone
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Available Route
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Available Car
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Expected Route
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Expected Car
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Status
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Exchanged To
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Driver Phone
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Created
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredExchanges?.map((item) => (
+                    <tr key={item.id} className="border-t">
+                      <td className="px-6 py-4 font-semibold text-slate-900">
+                        {item.users?.first_name} {item.users?.last_name}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {item.users?.phone}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {item.available_source_city}→
+                        {item.available_destination_city}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {item.available_car_type}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {item.expected_source_city}→
+                        {item.expected_destination_city}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {item.expected_car_type}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        {item.booked ? (
+                          <span className="rounded bg-green-100 px-2 py-1 text-green-700 font-semibold">
+                            Exchanged
+                          </span>
+                        ) : (
+                          <span className="rounded bg-red-100 px-2 py-1 text-red-700 font-semibold">
+                            Pending
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-6 py-4 font-semibold text-slate-900">
+                        {item.exchanged_user
+                          ? `${item.exchanged_user.first_name} ${item.exchanged_user.last_name}`
+                          : "-"}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {item.exchanged_user?.phone ?? "-"}
+                      </td>
+
+                      <td className="px-6 py-4 text-slate-700">
+                        {new Date(item.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

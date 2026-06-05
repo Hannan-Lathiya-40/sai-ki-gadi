@@ -227,6 +227,53 @@ export default async function DashboardPage() {
       ascending: false,
     });
 
+  const { data: requirements, error: requirementsError } = await supabaseAdmin
+    .from("requirements")
+    .select(
+      `
+      *,
+      users!requirements_user_id_fkey (
+        first_name,
+        last_name,
+        phone
+      ),
+      assigned_user:users!requirements_assigned_to_user_id_fkey (
+        first_name,
+        last_name,
+        phone
+      )
+    `,
+    )
+    .order("created_at", {
+      ascending: false,
+    });
+
+  console.log("REQUIREMENTS:", requirements);
+  console.log("REQUIREMENTS ERROR:", requirementsError);
+
+
+
+  const { data: exchanges } = await supabaseAdmin
+    .from("exchange_listings")
+    .select(
+      `
+    *,
+    users!exchange_listings_user_id_fkey (
+      first_name,
+      last_name,
+      phone
+    ),
+    exchanged_user:users!exchange_listings_exchanged_to_user_id_fkey (
+      first_name,
+      last_name,
+      phone
+    )
+  `,
+    )
+    .order("created_at", {
+      ascending: false,
+    });
+
   return (
     <div className="min-h-screen bg-slate-100">
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -243,6 +290,8 @@ export default async function DashboardPage() {
           cities={cities ?? []}
           sliders={sliders ?? []}
           users={allUsers ?? []}
+          requirements={requirements ?? []}
+          exchanges={exchanges ?? []}
         />
       </main>
     </div>
