@@ -11,7 +11,7 @@ export async function PUT(req: NextRequest, context: Context) {
   try {
     const body = await req.json();
 
-    const { image, status } = body;
+    const { image, status, display_order } = body;
 
     const { id } = await context.params;
 
@@ -20,6 +20,7 @@ export async function PUT(req: NextRequest, context: Context) {
       .update({
         image,
         status,
+        display_order,
       })
       .eq("id", id)
       .select()

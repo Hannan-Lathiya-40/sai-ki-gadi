@@ -223,6 +223,7 @@ export default async function DashboardPage() {
   const { data: sliders } = await supabaseAdmin
     .from("sliders")
     .select("*")
+    .order("display_order", { ascending: true })
     .order("created_at", {
       ascending: false,
     });

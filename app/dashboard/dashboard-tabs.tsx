@@ -111,6 +111,7 @@ type Slider = {
   id: string;
   image: string;
   status: boolean;
+  display_order: number;
   created_at: string;
 };
 
@@ -281,6 +282,8 @@ export function DashboardTabs({
   const [sliderImage, setSliderImage] = useState("");
 
   const [sliderStatus, setSliderStatus] = useState(true);
+
+  const [sliderOrder, setSliderOrder] = useState(0);
 
   const [editingSliderId, setEditingSliderId] = useState<string | null>(null);
 
@@ -575,6 +578,7 @@ export function DashboardTabs({
         body: JSON.stringify({
           image: sliderImage,
           status: sliderStatus,
+          display_order: sliderOrder,
         }),
       });
 
@@ -2026,6 +2030,10 @@ export function DashboardTabs({
                     </th>
 
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Display Order
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
                       Actions
                     </th>
                   </tr>
@@ -2064,6 +2072,10 @@ export function DashboardTabs({
                           </span>
                         </td>
 
+                        <td className="px-4 py-3 font-bold text-slate-700">
+                          {slider.display_order}
+                        </td>
+
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <button
@@ -2073,6 +2085,8 @@ export function DashboardTabs({
                                 setSliderImage(slider.image);
 
                                 setSliderStatus(slider.status);
+
+                                setSliderOrder(slider.display_order || 0);
 
                                 setShowSliderModal(true);
                               }}
@@ -2480,6 +2494,8 @@ export function DashboardTabs({
                   setSliderImage("");
 
                   setSliderStatus(true);
+
+                  setSliderOrder(0);
                 }}
                 className="text-slate-500 hover:text-slate-700"
               >
@@ -2532,6 +2548,21 @@ export function DashboardTabs({
                     className="mt-4 aspect-[10/5] w-full rounded-2xl object-cover"
                   />
                 ) : null}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Display Order
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Enter display order"
+                  value={sliderOrder}
+                  onChange={(e) => setSliderOrder(Number(e.target.value))}
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
               </div>
 
               <div className="flex items-center gap-3">

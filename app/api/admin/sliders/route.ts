@@ -6,13 +6,14 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const { image, status } = body;
+    const { image, status, display_order } = body;
 
     const { data, error } = await supabaseAdmin
       .from("sliders")
       .insert({
         image,
         status,
+        display_order,
       })
       .select()
       .single();
