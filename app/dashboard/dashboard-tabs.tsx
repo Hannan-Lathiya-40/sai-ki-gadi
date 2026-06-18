@@ -1,7 +1,7 @@
 "use client";
 
 import App from "next/app";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 
 type MembershipCounts = {
@@ -122,6 +122,28 @@ type city = {
   is_active: boolean;
 };
 
+type FraudReport = {
+  id: string;
+  reason: string;
+  description: string | null;
+  created_at: string;
+
+  from_user_id: string;
+  to_user_id: string;
+
+  from_user: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+
+  to_user: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  } | null;
+};
+
 type DashboardTabsProps = {
   totalUsers: number;
   membership: MembershipCounts;
@@ -137,6 +159,7 @@ type DashboardTabsProps = {
   users: AppUser[];
   requirements: Requirement[];
   exchanges: Exchange[];
+  fraudReports: FraudReport[];
   // winners: {
   //   id: string;
   //   date: string;
@@ -161,7 +184,8 @@ type TabKey =
   | "sliders"
   | "users"
   | "requirements"
-  | "exchanges";
+  | "exchanges"
+  | "fraud-reports";
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   if (value === "pro_plus") return "Pro Plus";
@@ -184,9 +208,19 @@ export function DashboardTabs({
   users,
   requirements,
   exchanges,
+  fraudReports,
 }: DashboardTabsProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab") as TabKey | null;
+
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
   const [reqSearch, setReqSearch] = useState("");
   const [reqStatus, setReqStatus] = useState("all");
   const [reqCarType, setReqCarType] = useState("all");
@@ -254,6 +288,16 @@ export function DashboardTabs({
 
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
+  const [showFraudModal, setShowFraudModal] = useState(false);
+
+  const [fromUserId, setFromUserId] = useState("");
+  const [toUserId, setToUserId] = useState("");
+  const [fraudReason, setFraudReason] = useState("");
+  const [fraudDescription, setFraudDescription] = useState("");
+
+  const [savingFraud, setSavingFraud] = useState(false);
+  const [editingFraudId, setEditingFraudId] = useState<string | null>(null);
+
   const sourceCities = [
     ...new Set(requirements?.map((r) => r.source_city).filter(Boolean)),
   ];
@@ -271,7 +315,6 @@ export function DashboardTabs({
       exchanges?.map((e) => e.available_destination_city).filter(Boolean),
     ),
   ];
-
 
   const cityOptions = [...new Set((cities ?? []).map((c) => c.city))];
 
@@ -605,6 +648,77 @@ export function DashboardTabs({
     }
   };
 
+  const createFraud = async () => {
+    try {
+      setSavingFraud(true);
+
+      const payload = {
+        from_user_id: fromUserId,
+        to_user_id: toUserId,
+        reason: fraudReason,
+        description: fraudDescription,
+      };
+
+      const response = editingFraudId
+        ? await fetch(`/api/admin/fraud-reports/${editingFraudId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          })
+        : await fetch("/api/admin/fraud-reports", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+
+        throw new Error(errorData.error || "Failed");
+      }
+
+      setShowFraudModal(false);
+
+      setEditingFraudId(null);
+      setFromUserId("");
+      setToUserId("");
+      setFraudReason("");
+      setFraudDescription("");
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+
+      alert(error instanceof Error ? error.message : "Something went wrong");
+    } finally {
+      setSavingFraud(false);
+    }
+  };
+
+  const deleteFraud = async (id: string) => {
+    const confirmDelete = window.confirm("Delete this fraud report?");
+
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`/api/admin/fraud-reports/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const deleteUser = async (id: string) => {
     const confirmDelete = window.confirm("Delete this user?");
 
@@ -861,6 +975,16 @@ export function DashboardTabs({
           onClick={() => setActiveTab("exchanges")}
         >
           Exchanges ({exchanges?.length || 0})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "fraud-reports"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("fraud-reports")}
+        >
+          Fraud Reports ({fraudReports?.length || 0})
         </button>
       </div>
 
@@ -1224,9 +1348,20 @@ export function DashboardTabs({
                     </tr>
                   ) : (
                     users.map((user) => (
+                      // <tr
+                      //   key={user.id}
+                      //   className={`hover:bg-slate-50 transition-all ${
+                      //     updatingUserId === user.id
+                      //       ? "opacity-50 pointer-events-none"
+                      //       : ""
+                      //   }`}
+                      // >
                       <tr
                         key={user.id}
-                        className={`hover:bg-slate-50 transition-all ${
+                        onClick={() =>
+                          router.push(`/dashboard/users/${user.id}?tab=users`)
+                        }
+                        className={`cursor-pointer hover:bg-slate-50 transition-all ${
                           updatingUserId === user.id
                             ? "opacity-50 pointer-events-none"
                             : ""
@@ -1746,6 +1881,118 @@ export function DashboardTabs({
             </div>
           </div>
         </>
+      ) : activeTab === "fraud-reports" ? (
+        <>
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => {
+                setEditingFraudId(null);
+                setFromUserId("");
+                setToUserId("");
+                setFraudReason("");
+                setFraudDescription("");
+                setShowFraudModal(true);
+              }}
+              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              Report Fraud
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Reporter
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Reported User
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Reason
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Description
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Date
+                    </th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-800">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {(fraudReports ?? []).length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="px-4 py-10 text-center text-slate-500"
+                      >
+                        No fraud reports found.
+                      </td>
+                    </tr>
+                  ) : (
+                    (fraudReports ?? []).map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.from_user?.first_name}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.to_user?.first_name}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.reason}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {item.description || "-"}
+                        </td>
+
+                        <td className="px-6 py-4 text-slate-700">
+                          {new Date(item.created_at).toLocaleDateString()}
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingFraudId(item.id);
+
+                                setFromUserId(item.from_user_id);
+                                setToUserId(item.to_user_id);
+
+                                setFraudReason(item.reason);
+                                setFraudDescription(item.description || "");
+
+                                setShowFraudModal(true);
+                              }}
+                              className="rounded bg-amber-100 px-3 py-1 text-amber-700"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => deleteFraud(item.id)}
+                              className="rounded bg-red-100 px-3 py-1 text-red-700"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       ) : activeTab === "sliders" ? (
         <>
           <div className="mb-4 flex justify-end">
@@ -1978,6 +2225,82 @@ export function DashboardTabs({
             </div>
           </div>
         </>
+      )}
+      {showFraudModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">
+                {editingFraudId ? "Edit Fraud Report" : "Report Fraud"}
+              </h2>
+
+              <button
+                onClick={() => setShowFraudModal(false)}
+                className="text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <select
+                value={fromUserId}
+                onChange={(e) => setFromUserId(e.target.value)}
+                className="h-12 w-full rounded-xl border border-slate-300 px-4 text-slate-900 bg-white"
+              >
+                <option value="">Report By</option>
+
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name} {user.last_name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={toUserId}
+                onChange={(e) => setToUserId(e.target.value)}
+                className="h-12 w-full rounded-xl border border-slate-300 px-4 text-slate-900 bg-white"
+              >
+                <option value="">Fraud User</option>
+
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name} {user.last_name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={fraudReason}
+                onChange={(e) => setFraudReason(e.target.value)}
+                className="h-12 w-full rounded-xl border border-slate-300 px-4 text-slate-900 bg-white"
+              >
+                <option value="">Select Reason</option>
+                <option value="Payment Fraud">Payment Fraud</option>
+                <option value="Fake Booking">Fake Booking</option>
+                <option value="Spam">Spam</option>
+                <option value="Misbehavior">Misbehavior</option>
+              </select>
+
+              <textarea
+                value={fraudDescription}
+                onChange={(e) => setFraudDescription(e.target.value)}
+                placeholder="Description"
+                className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 placeholder:text-slate-400 bg-white"
+                rows={4}
+              />
+
+              <button
+                onClick={createFraud}
+                disabled={savingFraud}
+                className="w-full rounded-xl bg-red-600 py-3 font-semibold text-white"
+              >
+                {savingFraud ? "Saving..." : "Save Report"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {showWinnerModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

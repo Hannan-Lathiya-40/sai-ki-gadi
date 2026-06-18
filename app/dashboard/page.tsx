@@ -251,8 +251,6 @@ export default async function DashboardPage() {
   console.log("REQUIREMENTS:", requirements);
   console.log("REQUIREMENTS ERROR:", requirementsError);
 
-
-
   const { data: exchanges } = await supabaseAdmin
     .from("exchange_listings")
     .select(
@@ -264,6 +262,27 @@ export default async function DashboardPage() {
       phone
     ),
     exchanged_user:users!exchange_listings_exchanged_to_user_id_fkey (
+      first_name,
+      last_name,
+      phone
+    )
+  `,
+    )
+    .order("created_at", {
+      ascending: false,
+    });
+
+  const { data: fraudReports } = await supabaseAdmin
+    .from("fraud_reports")
+    .select(
+      `
+    *,
+    from_user:users!fraud_reports_from_user_id_fkey (
+      first_name,
+      last_name,
+      phone
+    ),
+    to_user:users!fraud_reports_to_user_id_fkey (
       first_name,
       last_name,
       phone
@@ -292,6 +311,7 @@ export default async function DashboardPage() {
           users={allUsers ?? []}
           requirements={requirements ?? []}
           exchanges={exchanges ?? []}
+          fraudReports={fraudReports ?? []}
         />
       </main>
     </div>
