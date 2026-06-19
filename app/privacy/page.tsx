@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | MeriGadi",
-  description: "MeriGadi privacy policy",
+  title: "Privacy Policy | Sai ki Gadi",
+  description: "Sai ki Gadi privacy policy",
 };
 
 export default function PrivacyPage() {
@@ -27,9 +27,10 @@ export default function PrivacyPage() {
               1. Introduction
             </h2>
             <p>
-              MeriGadi (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) respects your privacy.
-              This policy describes how we collect, use, and protect information when you use our
-              website and related services. This is a starter policy for your website; you should
+              Sai ki Gadi (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;)
+              respects your privacy. This policy describes how we collect, use,
+              and protect information when you use our website and related
+              services. This is a starter policy for your website; you should
               have it reviewed by legal counsel before production use.
             </p>
           </section>
@@ -38,9 +39,9 @@ export default function PrivacyPage() {
               2. Information we collect
             </h2>
             <p>
-              We may collect identifiers you provide (such as login ID and contact details),
-              technical data (such as device type and browser), and usage data to operate and
-              improve the service.
+              We may collect identifiers you provide (such as login ID and
+              contact details), technical data (such as device type and
+              browser), and usage data to operate and improve the service.
             </p>
           </section>
           <section>
@@ -48,8 +49,8 @@ export default function PrivacyPage() {
               3. How we use information
             </h2>
             <p>
-              We use information to authenticate users, provide support, comply with law, and
-              improve security and product experience.
+              We use information to authenticate users, provide support, comply
+              with law, and improve security and product experience.
             </p>
           </section>
           <section>
@@ -57,24 +58,29 @@ export default function PrivacyPage() {
               4. Sharing and retention
             </h2>
             <p>
-              We do not sell your personal information. We may share data with service providers
-              who assist our operations, under appropriate agreements. We retain data only as long
-              as needed for the purposes described here or as required by law.
+              We do not sell your personal information. We may share data with
+              service providers who assist our operations, under appropriate
+              agreements. We retain data only as long as needed for the purposes
+              described here or as required by law.
             </p>
           </section>
           <section>
-            <h2 className="mb-2 text-lg font-semibold text-slate-900">5. Your choices</h2>
+            <h2 className="mb-2 text-lg font-semibold text-slate-900">
+              5. Your choices
+            </h2>
             <p>
-              Depending on your region, you may have rights to access, correct, or delete your
-              personal information. Contact us using the details you publish for your business to
-              exercise those rights.
+              Depending on your region, you may have rights to access, correct,
+              or delete your personal information. Contact us using the details
+              you publish for your business to exercise those rights.
             </p>
           </section>
           <section>
-            <h2 className="mb-2 text-lg font-semibold text-slate-900">6. Contact</h2>
+            <h2 className="mb-2 text-lg font-semibold text-slate-900">
+              6. Contact
+            </h2>
             <p>
-              For privacy questions, contact MeriGadi using the support channel you provide to
-              customers.
+              For privacy questions, contact Sai ki Gadi using the support
+              channel you provide to customers.
             </p>
           </section>
         </div>

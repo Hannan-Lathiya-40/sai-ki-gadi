@@ -17,7 +17,7 @@ export default async function Home() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
         <div className="mb-10 text-center">
           <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">
-            MeriGadi Admin
+            Sai ki Gadi - Admin
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
             Sign in

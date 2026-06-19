@@ -855,7 +855,7 @@ export function DashboardTabs({
               Admin Dashboard
             </p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-              MeriGadi Verification Console
+              Sai ki Gadi Verification Console
             </h1>
             <p className="mt-2 text-sm text-slate-600">
               Monitor signup analytics and manually verify document uploads.

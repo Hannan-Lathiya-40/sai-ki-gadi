@@ -5,7 +5,7 @@ import { supabaseAdmin, usingServiceRole } from "@/lib/supabase-admin";
 import { DashboardTabs } from "./dashboard-tabs";
 
 export const metadata: Metadata = {
-  title: "Dashboard | MeriGadi Admin",
+  title: "Dashboard | Sai ki Gadi Admin",
   description: "Admin dashboard for profile verification.",
 };
 

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MeriGadi",
-  description: "MeriGadi — simple truck ride app for everyone.",
+  title: "Sai ki Gadi",
+  description: "Sai ki Gadi — simple truck ride app for everyone.",
 };
 
 export default function RootLayout({
