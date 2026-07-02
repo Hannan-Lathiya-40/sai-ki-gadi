@@ -5,11 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 
 type MembershipCounts = {
-  user: number;
-  pro: number;
-  pro_plus: number;
+  regular: number;
+  silver: number;
+  gold: number;
+  platinum: number;
 };
-
 type PendingVerificationUser = {
   id: string;
   fullName: string;
@@ -376,6 +376,29 @@ export function DashboardTabs({
     ),
   ];
 
+  const updateMembership = async (userId: string, membershipType: string) => {
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          membership_type: membershipType,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed");
+      }
+
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      alert("Failed to update membership");
+    }
+  };
+
   const filteredExchanges = exchanges?.filter((item) => {
     const search = exchangeSearch.toLowerCase();
 
@@ -430,25 +453,25 @@ export function DashboardTabs({
         accent: "border-slate-900 bg-slate-900 text-white shadow-slate-300/40",
       },
       {
-        label: "User",
-        value: membership.user,
-        subtitle: "Standard membership",
+        label: "Regular",
+        value: membership.regular,
+        subtitle: "Regular Members",
         tab: "users",
         accent: "border-slate-200 bg-white text-slate-900",
       },
       {
-        label: "Pro",
-        value: membership.pro,
-        subtitle: "Pro membership",
+        label: "Gold",
+        value: membership.gold,
+        subtitle: "Gold Members",
         tab: "users",
-        accent: "border-indigo-100 bg-indigo-50 text-indigo-700",
+        accent: "border-yellow-100 bg-yellow-50 text-yellow-700",
       },
       {
-        label: "Pro Plus",
-        value: membership.pro_plus,
-        subtitle: "Pro Plus membership",
+        label: "Platinum",
+        value: membership.platinum,
+        subtitle: "Platinum Members",
         tab: "users",
-        accent: "border-violet-100 bg-violet-50 text-violet-700",
+        accent: "border-purple-100 bg-purple-50 text-purple-700",
       },
       {
         label: "Verified",
@@ -466,9 +489,9 @@ export function DashboardTabs({
       },
     ],
     [
-      membership.pro,
-      membership.pro_plus,
-      membership.user,
+      membership.gold,
+      membership.platinum,
+      membership.regular,
       totalUsers,
       unverifiedCount,
       verifiedCount,
@@ -1381,9 +1404,17 @@ export function DashboardTabs({
                           {user.email ?? "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-                            {user.membership_type ?? "—"}
-                          </span>
+                          <select
+                            value={user.membership_type ?? "regular"}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) =>
+                              updateMembership(user.id, e.target.value)
+                            }
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900"
+                          >
+                            <option value="regular">Regular</option>
+                            <option value="gold">Gold</option>
+                          </select>
                         </td>
                         <td className="px-4 py-3">
                           <span

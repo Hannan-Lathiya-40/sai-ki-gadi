@@ -15,13 +15,34 @@ export async function PUT(
 
     const body = await request.json();
 
-    const { status } = body;
+    const { status, membership_type } = body;
+
+    const updateData: any = {};
+
+    if (typeof status === "boolean") {
+      updateData.status = status;
+    }
+
+    if (membership_type) {
+      const allowedMemberships = ["regular", "gold"];
+
+      if (!allowedMemberships.includes(membership_type)) {
+        return NextResponse.json(
+          {
+            error: "Invalid membership type",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      updateData.membership_type = membership_type;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("users")
-      .update({
-        status,
-      })
+      .update(updateData)
       .eq("id", id)
       .select()
       .single();

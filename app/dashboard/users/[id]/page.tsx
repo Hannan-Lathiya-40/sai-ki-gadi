@@ -4,6 +4,23 @@ import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { DocumentManager } from "../../../dashboard/verification/[userId]/document-manager";
 
+// type UserDetailRow = {
+//   id: string;
+//   first_name: string | null;
+//   last_name: string | null;
+//   phone: string | null;
+//   email: string | null;
+//   business_name: string | null;
+//   address_line_1: string | null;
+//   address_line_2: string | null;
+//   city: string | null;
+//   state: string | null;
+//   pincode: string | null;
+//   membership_type: string | null;
+//   verified: boolean | null;
+//   status: boolean | null;
+//   created_at: string | null;
+// };
 type UserDetailRow = {
   id: string;
   first_name: string | null;
@@ -20,6 +37,7 @@ type UserDetailRow = {
   verified: boolean | null;
   status: boolean | null;
   created_at: string | null;
+  profile_image: string | null;
 };
 
 type IdentityDocRow = {
@@ -76,10 +94,17 @@ export default async function UserDetailPage({
   const { id } = await params;
 
   const [{ data: user, error: userError }, docsResult] = await Promise.all([
+    // supabaseAdmin
+    //   .from("users")
+    //   .select(
+    //     "id, first_name, last_name, phone, email, business_name, address_line_1, address_line_2, city, state, pincode, membership_type, verified, status, created_at",
+    //   )
+    //   .eq("id", id)
+    //   .maybeSingle<UserDetailRow>(),
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, business_name, address_line_1, address_line_2, city, state, pincode, membership_type, verified, status, created_at",
+        "id, first_name, last_name, phone, email, business_name, address_line_1, address_line_2, city, state, pincode, membership_type, verified, status, created_at, profile_image",
       )
       .eq("id", id)
       .maybeSingle<UserDetailRow>(),
@@ -172,13 +197,30 @@ export default async function UserDetailPage({
         </div>
 
         {/* User Info Section */}
+        {/* User Info Section */}
         <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            {fullName(user)}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Review user details and uploaded verification documents.
-          </p>
+          <div className="flex items-start gap-5">
+            {user.profile_image ? (
+              <img
+                src={user.profile_image}
+                alt={fullName(user)}
+                className="h-20 w-20 flex-shrink-0 rounded-full border border-slate-200 object-cover"
+              />
+            ) : (
+              <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xl font-bold text-slate-400">
+                {fullName(user).charAt(0).toUpperCase()}
+              </div>
+            )}
+
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                {fullName(user)}
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                Review user details and uploaded verification documents.
+              </p>
+            </div>
+          </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -265,7 +307,12 @@ export default async function UserDetailPage({
         </section>
 
         {/* Documents Section */}
-        <DocumentManager userId={id} documents={documents} />
+        {/* Documents Section */}
+        <DocumentManager
+          userId={id}
+          documents={documents}
+          profileImage={user.profile_image}
+        />
       </main>
     </div>
   );

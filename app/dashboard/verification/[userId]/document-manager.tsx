@@ -14,9 +14,14 @@ type DocumentItem = {
 type DocumentManagerProps = {
   userId: string;
   documents: DocumentItem[];
+  profileImage?: string | null;
 };
 
-export function DocumentManager({ userId, documents }: DocumentManagerProps) {
+export function DocumentManager({
+  userId,
+  documents,
+  profileImage,
+}: DocumentManagerProps) {
   const router = useRouter();
   const [deletingField, setDeletingField] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
@@ -65,6 +70,26 @@ export function DocumentManager({ userId, documents }: DocumentManagerProps) {
         ) : null}
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {profileImage ? (
+            <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <div className="aspect-[4/3] bg-slate-100">
+                {/* eslint-disable-next-line @next/next/no-img-element -- profile photo preview */}
+                <img
+                  src={profileImage}
+                  alt="Profile photo"
+                  className="h-full w-full object-cover cursor-pointer"
+                  onClick={() => setSelectedImage(profileImage)}
+                />
+              </div>
+              <div className="space-y-2 p-4">
+                <p className="font-semibold text-slate-900">Profile Photo</p>
+                <p className="truncate text-xs text-slate-500">
+                  Uploaded during registration
+                </p>
+              </div>
+            </article>
+          ) : null}
+
           {documents.map((doc) => {
             const hasUpload = Boolean(doc.path);
             const isDeleting = deletingField === doc.pathField;
