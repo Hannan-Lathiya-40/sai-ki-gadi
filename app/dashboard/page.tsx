@@ -24,6 +24,7 @@ type UserRow = {
   verified: boolean | null;
   status: boolean | null;
   verification_status: string | null;
+  created_at: string | null;
 };
 
 type IdentityDocRow = {
@@ -41,10 +42,17 @@ type IdentityDocRow = {
   aadhaar_back_path?: string | null;
 };
 
+// type MembershipCounts = {
+//   user: number;
+//   pro: number;
+//   pro_plus: number;
+// };
+
 type MembershipCounts = {
-  user: number;
-  pro: number;
-  pro_plus: number;
+  regular: number;
+  silver: number;
+  gold: number;
+  platinum: number;
 };
 
 type PendingVerificationUser = {
@@ -52,14 +60,22 @@ type PendingVerificationUser = {
   fullName: string;
   phone: string;
   email: string;
-  membershipType: "user" | "pro" | "pro_plus";
+  membershipType: "regular" | "silver" | "gold" | "platinum";
 };
 
 function normalizeMembership(
   value: string | null,
-): "user" | "pro" | "pro_plus" {
-  if (value === "pro" || value === "pro_plus") return value;
-  return "user";
+): "regular" | "silver" | "gold" | "platinum" {
+  if (
+    value === "regular" ||
+    value === "silver" ||
+    value === "gold" ||
+    value === "platinum"
+  ) {
+    return value;
+  }
+
+  return "regular";
 }
 
 function hasAnyUploadedDocs(row: IdentityDocRow): boolean {
@@ -117,7 +133,7 @@ export default async function DashboardPage() {
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status",
+        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status, created_at",
       ),
     (async () => {
       // Prefer current mobile schema columns.
@@ -150,7 +166,12 @@ export default async function DashboardPage() {
   const allUsers: UserRow[] = users ?? [];
   const allDocs: IdentityDocRow[] = docs ?? [];
 
-  const membership: MembershipCounts = { user: 0, pro: 0, pro_plus: 0 };
+  const membership: MembershipCounts = {
+    regular: 0,
+    silver: 0,
+    gold: 0,
+    platinum: 0,
+  };
   let verifiedCount = 0;
   let unverifiedCount = 0;
 

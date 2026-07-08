@@ -16,7 +16,7 @@ type PendingVerificationUser = {
   fullName: string;
   phone: string;
   email: string;
-  membershipType: "user" | "pro" | "pro_plus";
+  membershipType: "regular" | "silver" | "gold" | "platinum";
 };
 
 type WinnersUser = {
@@ -199,9 +199,19 @@ type TabKey =
   | "fraud-reports";
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
-  if (value === "pro_plus") return "Pro Plus";
-  if (value === "pro") return "Pro";
-  return "User";
+  switch (value) {
+    case "gold":
+      return "Gold";
+
+    case "platinum":
+      return "Platinum";
+
+    case "silver":
+      return "Silver";
+
+    default:
+      return "Regular";
+  }
 }
 
 export function DashboardTabs({
