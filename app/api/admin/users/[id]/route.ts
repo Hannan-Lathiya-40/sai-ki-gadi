@@ -15,7 +15,7 @@ export async function PUT(
 
     const body = await request.json();
 
-    const { status, membership_type } = body;
+    const { status, membership_type, membership_duration_days } = body;
 
     const updateData: any = {};
 
@@ -38,6 +38,28 @@ export async function PUT(
       }
 
       updateData.membership_type = membership_type;
+
+      if (membership_type === "gold") {
+        const days = Number(membership_duration_days || 30);
+
+        const startDate = new Date();
+
+        const endDate = new Date();
+
+        endDate.setDate(endDate.getDate() + days);
+
+        updateData.membership_started_at = startDate.toISOString();
+
+        updateData.membership_expires_at = endDate.toISOString();
+
+        updateData.membership_duration_days = days;
+      } else {
+        updateData.membership_started_at = null;
+
+        updateData.membership_expires_at = null;
+
+        updateData.membership_duration_days = null;
+      }
     }
 
     const { data, error } = await supabaseAdmin

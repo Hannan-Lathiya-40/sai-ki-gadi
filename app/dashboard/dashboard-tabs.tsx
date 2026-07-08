@@ -3,6 +3,7 @@
 import App from "next/app";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 type MembershipCounts = {
   regular: number;
@@ -38,9 +39,18 @@ type AppUser = {
   last_name: string | null;
   phone: string | null;
   email: string | null;
+
   membership_type: string | null;
+
+  membership_started_at: string | null;
+  membership_expires_at: string | null;
+  membership_duration_days: number | null;
+
   verified: boolean | null;
+
   status: boolean | null;
+
+  created_at: string | null;
 };
 
 type Requirement = {
@@ -238,6 +248,17 @@ export function DashboardTabs({
 
   const [exchangeFromDate, setExchangeFromDate] = useState("");
   const [exchangeToDate, setExchangeToDate] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+
+  const [userMembership, setUserMembership] = useState("all");
+
+  const [userVerification, setUserVerification] = useState("all");
+
+  const [userStatusFilter, setUserStatusFilter] = useState("all");
+
+  const [userFromDate, setUserFromDate] = useState("");
+
+  const [userToDate, setUserToDate] = useState("");
   const pendingCount = pendingVerificationUsers.length;
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
@@ -288,6 +309,12 @@ export function DashboardTabs({
   const [editingSliderId, setEditingSliderId] = useState<string | null>(null);
 
   const [savingSlider, setSavingSlider] = useState(false);
+
+  const [sliderList, setSliderList] = useState(sliders);
+
+  useEffect(() => {
+    setSliderList(sliders);
+  }, [sliders]);
 
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
@@ -376,7 +403,11 @@ export function DashboardTabs({
     ),
   ];
 
-  const updateMembership = async (userId: string, membershipType: string) => {
+  const updateMembership = async (
+    userId: string,
+    membershipType: string,
+    membershipDurationDays?: number,
+  ) => {
     try {
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: "PUT",
@@ -385,6 +416,7 @@ export function DashboardTabs({
         },
         body: JSON.stringify({
           membership_type: membershipType,
+          membership_duration_days: membershipDurationDays,
         }),
       });
 
@@ -439,6 +471,50 @@ export function DashboardTabs({
       matchesCar &&
       matchesSource &&
       matchesDestination &&
+      matchesDate
+    );
+  });
+
+  const filteredUsers = users.filter((user) => {
+    const search = userSearch.toLowerCase();
+
+    const fullName =
+      `${user.first_name ?? ""} ${user.last_name ?? ""}`.toLowerCase();
+
+    const matchesSearch =
+      fullName.includes(search) ||
+      (user.phone ?? "").toLowerCase().includes(search) ||
+      (user.email ?? "").toLowerCase().includes(search);
+
+    const matchesMembership =
+      userMembership === "all" || user.membership_type === userMembership;
+
+    const matchesVerification =
+      userVerification === "all"
+        ? true
+        : userVerification === "verified"
+          ? user.verified
+          : !user.verified;
+
+    const matchesStatus =
+      userStatusFilter === "all"
+        ? true
+        : userStatusFilter === "active"
+          ? user.status
+          : !user.status;
+
+    const created = user.created_at ? new Date(user.created_at) : null;
+
+    const matchesDate =
+      (!userFromDate || (created && created >= new Date(userFromDate))) &&
+      (!userToDate ||
+        (created && created <= new Date(userToDate + "T23:59:59")));
+
+    return (
+      matchesSearch &&
+      matchesMembership &&
+      matchesVerification &&
+      matchesStatus &&
       matchesDate
     );
   });
@@ -642,6 +718,43 @@ export function DashboardTabs({
       router.refresh();
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const onSliderDragEnd = async (result: any) => {
+    if (!result.destination) return;
+
+    const items = Array.from(sliderList);
+
+    const [moved] = items.splice(result.source.index, 1);
+
+    items.splice(result.destination.index, 0, moved);
+
+    const updated = items.map((item, index) => ({
+      ...item,
+      display_order: index + 1,
+    }));
+
+    setSliderList(updated);
+
+    try {
+      await fetch("/api/admin/sliders/reorder", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sliders: updated.map((x) => ({
+            id: x.id,
+            display_order: x.display_order,
+          })),
+        }),
+      });
+
+      router.replace("/dashboard?tab=sliders");
+      router.refresh();
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -1329,6 +1442,75 @@ export function DashboardTabs({
         </>
       ) : activeTab === "users" ? (
         <>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3 overflow-x-auto pb-1">
+              <input
+                type="text"
+                placeholder="Search Name / Phone / Email"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="h-11 w-72 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 placeholder:text-slate-400"
+              />
+
+              <select
+                value={userMembership}
+                onChange={(e) => setUserMembership(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              >
+                <option value="all">All Membership</option>
+                <option value="regular">Regular</option>
+                <option value="gold">Gold</option>
+              </select>
+
+              <select
+                value={userVerification}
+                onChange={(e) => setUserVerification(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              >
+                <option value="all">All Verification</option>
+                <option value="verified">Verified</option>
+                <option value="pending">Pending</option>
+              </select>
+
+              <select
+                value={userStatusFilter}
+                onChange={(e) => setUserStatusFilter(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              >
+                <option value="all">All Status</option>
+                <option value="active">ON</option>
+                <option value="inactive">OFF</option>
+              </select>
+
+              <input
+                type="date"
+                value={userFromDate}
+                onChange={(e) => setUserFromDate(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              />
+
+              <input
+                type="date"
+                value={userToDate}
+                onChange={(e) => setUserToDate(e.target.value)}
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              />
+
+              <button
+                onClick={() => {
+                  setUserSearch("");
+                  setUserMembership("all");
+                  setUserVerification("all");
+                  setUserStatusFilter("all");
+                  setUserFromDate("");
+                  setUserToDate("");
+                }}
+                className="h-11 whitespace-nowrap rounded-lg bg-red-500 px-4 text-white"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="min-w-full table-fixed divide-y divide-slate-200 text-sm">
@@ -1348,6 +1530,14 @@ export function DashboardTabs({
 
                     <th className="w-[130px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Plan
+                    </th>
+
+                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Membership Start
+                    </th>
+
+                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Membership End
                     </th>
 
                     <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -1374,7 +1564,7 @@ export function DashboardTabs({
                       </td>
                     </tr>
                   ) : (
-                    users.map((user) => (
+                    filteredUsers.map((user) => (
                       // <tr
                       //   key={user.id}
                       //   className={`hover:bg-slate-50 transition-all ${
@@ -1404,17 +1594,50 @@ export function DashboardTabs({
                           {user.email ?? "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <select
-                            value={user.membership_type ?? "regular"}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) =>
-                              updateMembership(user.id, e.target.value)
-                            }
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900"
-                          >
-                            <option value="regular">Regular</option>
-                            <option value="gold">Gold</option>
-                          </select>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <select
+                              defaultValue={user.membership_type ?? "regular"}
+                              className="rounded-lg border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800"
+                              onChange={(e) => {
+                                const type = e.target.value;
+
+                                if (type === "gold") {
+                                  const duration = Number(
+                                    prompt(
+                                      "Enter membership duration in days\n\nExamples:\n7\n30\n90\n180\n365",
+                                      "30",
+                                    ),
+                                  );
+
+                                  if (!duration || duration <= 0) {
+                                    return;
+                                  }
+
+                                  updateMembership(user.id, "gold", duration);
+                                } else {
+                                  updateMembership(user.id, "regular");
+                                }
+                              }}
+                            >
+                              <option value="regular">Regular</option>
+                              <option value="gold">Gold</option>
+                            </select>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {user.membership_started_at
+                            ? new Date(
+                                user.membership_started_at,
+                              ).toLocaleDateString()
+                            : "-"}
+                        </td>
+
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {user.membership_expires_at
+                            ? new Date(
+                                user.membership_expires_at,
+                              ).toLocaleDateString()
+                            : "-"}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -2070,74 +2293,94 @@ export function DashboardTabs({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
-                  {sliders?.length === 0 ? (
-                    <tr>
-                      <td
-                        className="px-4 py-10 text-center text-slate-500"
-                        colSpan={3}
+                <DragDropContext onDragEnd={onSliderDragEnd}>
+                  <Droppable droppableId="sliders">
+                    {(provided) => (
+                      <tbody
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className="divide-y divide-slate-100"
                       >
-                        No sliders found.
-                      </td>
-                    </tr>
-                  ) : (
-                    (sliders ?? []).map((slider) => (
-                      <tr key={slider.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <img
-                            src={slider.image}
-                            alt="slider"
-                            className="aspect-[10/5] w-40 rounded-xl object-cover"
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              slider.status
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {slider.status ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 font-bold text-slate-700">
-                          {slider.display_order}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingSliderId(slider.id);
-
-                                setSliderImage(slider.image);
-
-                                setSliderStatus(slider.status);
-
-                                setSliderOrder(slider.display_order || 0);
-
-                                setShowSliderModal(true);
-                              }}
-                              className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                        {sliders?.length === 0 ? (
+                          <tr>
+                            <td
+                              className="px-4 py-10 text-center text-slate-500"
+                              colSpan={3}
                             >
-                              Edit
-                            </button>
-
-                            <button
-                              onClick={() => deleteSlider(slider.id)}
-                              className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
+                              No sliders found.
+                            </td>
+                          </tr>
+                        ) : (
+                          sliderList.map((slider, index) => (
+                            <Draggable
+                              key={slider.id}
+                              draggableId={slider.id}
+                              index={index}
                             >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
+                              {(provided) => (
+                                <tr
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className="hover:bg-slate-50 cursor-grab"
+                                >
+                                  <td className="px-4 py-3">
+                                    <img
+                                      src={slider.image}
+                                      alt="slider"
+                                      className="aspect-[10/5] w-40 rounded-xl object-cover"
+                                    />
+                                  </td>
+
+                                  <td className="px-4 py-3">
+                                    <span
+                                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                        slider.status
+                                          ? "bg-emerald-100 text-emerald-700"
+                                          : "bg-red-100 text-red-700"
+                                      }`}
+                                    >
+                                      {slider.status ? "Active" : "Inactive"}
+                                    </span>
+                                  </td>
+
+                                  <td className="px-4 py-3 font-bold text-slate-700">
+                                    {slider.display_order}
+                                  </td>
+
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => {
+                                          setEditingSliderId(slider.id);
+                                          setSliderImage(slider.image);
+                                          setSliderStatus(slider.status);
+                                          setSliderOrder(slider.display_order);
+                                          setShowSliderModal(true);
+                                        }}
+                                        className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                                      >
+                                        Edit
+                                      </button>
+
+                                      <button
+                                        onClick={() => deleteSlider(slider.id)}
+                                        className="rounded-lg bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Draggable>
+                          ))
+                        )}
+                        {provided.placeholder}
+                      </tbody>
+                    )}
+                  </Droppable>
+                </DragDropContext>
               </table>
             </div>
           </div>

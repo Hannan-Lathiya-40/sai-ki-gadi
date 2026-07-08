@@ -18,6 +18,9 @@ type UserRow = {
   phone: string | null;
   email: string | null;
   membership_type: string | null;
+  membership_started_at: string | null;
+  membership_expires_at: string | null;
+  membership_duration_days: number | null;
   verified: boolean | null;
   status: boolean | null;
   verification_status: string | null;
@@ -114,7 +117,7 @@ export default async function DashboardPage() {
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, membership_type, verified, status, verification_status",
+        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status",
       ),
     (async () => {
       // Prefer current mobile schema columns.
