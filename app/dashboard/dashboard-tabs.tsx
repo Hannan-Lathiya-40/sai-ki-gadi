@@ -1,9 +1,11 @@
 "use client";
 
-import App from "next/app";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+
+import { exportToExcel } from "@/lib/export-excel";
+import { formatDateTime } from "@/lib/format-datetime";
 
 type MembershipCounts = {
   regular: number;
@@ -51,7 +53,25 @@ type AppUser = {
   status: boolean | null;
 
   created_at: string | null;
+  welcome_completed: boolean | null;
+  admin_remarks: string | null;
+  last_active_at: string | null;
+  rating_average: number | null;
+  rating_count: number | null;
+  requirement_count: number;
+  exchange_count: number;
+  availability_count: number;
+  driver_requirement_count: number;
+  total_posts: number;
 };
+
+type UserSortKey =
+  | "created_newest"
+  | "created_oldest"
+  | "last_active_recent"
+  | "last_active_least"
+  | "total_posts"
+  | "rating";
 
 type Requirement = {
   id: string;
@@ -269,6 +289,10 @@ export function DashboardTabs({
   const [userFromDate, setUserFromDate] = useState("");
 
   const [userToDate, setUserToDate] = useState("");
+  const [userSort, setUserSort] = useState<UserSortKey>("created_newest");
+  const [remarksDrafts, setRemarksDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const pendingCount = pendingVerificationUsers.length;
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
@@ -485,49 +509,85 @@ export function DashboardTabs({
     );
   });
 
-  const filteredUsers = users.filter((user) => {
-    const search = userSearch.toLowerCase();
+  const filteredUsers = useMemo(() => {
+    const filtered = users.filter((user) => {
+      const search = userSearch.toLowerCase();
 
-    const fullName =
-      `${user.first_name ?? ""} ${user.last_name ?? ""}`.toLowerCase();
+      const fullName =
+        `${user.first_name ?? ""} ${user.last_name ?? ""}`.toLowerCase();
 
-    const matchesSearch =
-      fullName.includes(search) ||
-      (user.phone ?? "").toLowerCase().includes(search) ||
-      (user.email ?? "").toLowerCase().includes(search);
+      const matchesSearch =
+        fullName.includes(search) ||
+        (user.phone ?? "").toLowerCase().includes(search) ||
+        (user.email ?? "").toLowerCase().includes(search);
 
-    const matchesMembership =
-      userMembership === "all" || user.membership_type === userMembership;
+      const matchesMembership =
+        userMembership === "all" || user.membership_type === userMembership;
 
-    const matchesVerification =
-      userVerification === "all"
-        ? true
-        : userVerification === "verified"
-          ? user.verified
-          : !user.verified;
+      const matchesVerification =
+        userVerification === "all"
+          ? true
+          : userVerification === "verified"
+            ? user.verified
+            : !user.verified;
 
-    const matchesStatus =
-      userStatusFilter === "all"
-        ? true
-        : userStatusFilter === "active"
-          ? user.status
-          : !user.status;
+      const matchesStatus =
+        userStatusFilter === "all"
+          ? true
+          : userStatusFilter === "active"
+            ? user.status
+            : !user.status;
 
-    const created = user.created_at ? new Date(user.created_at) : null;
+      const created = user.created_at ? new Date(user.created_at) : null;
 
-    const matchesDate =
-      (!userFromDate || (created && created >= new Date(userFromDate))) &&
-      (!userToDate ||
-        (created && created <= new Date(userToDate + "T23:59:59")));
+      const matchesDate =
+        (!userFromDate || (created && created >= new Date(userFromDate))) &&
+        (!userToDate ||
+          (created && created <= new Date(userToDate + "T23:59:59")));
 
-    return (
-      matchesSearch &&
-      matchesMembership &&
-      matchesVerification &&
-      matchesStatus &&
-      matchesDate
-    );
-  });
+      return (
+        matchesSearch &&
+        matchesMembership &&
+        matchesVerification &&
+        matchesStatus &&
+        matchesDate
+      );
+    });
+
+    const timeValue = (value: string | null | undefined) => {
+      if (!value) return 0;
+      const time = new Date(value).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    };
+
+    return [...filtered].sort((a, b) => {
+      switch (userSort) {
+        case "created_oldest":
+          return timeValue(a.created_at) - timeValue(b.created_at);
+        case "created_newest":
+          return timeValue(b.created_at) - timeValue(a.created_at);
+        case "last_active_least":
+          return timeValue(a.last_active_at) - timeValue(b.last_active_at);
+        case "last_active_recent":
+          return timeValue(b.last_active_at) - timeValue(a.last_active_at);
+        case "total_posts":
+          return (b.total_posts ?? 0) - (a.total_posts ?? 0);
+        case "rating":
+          return (b.rating_average ?? 0) - (a.rating_average ?? 0);
+        default:
+          return 0;
+      }
+    });
+  }, [
+    users,
+    userSearch,
+    userMembership,
+    userVerification,
+    userStatusFilter,
+    userFromDate,
+    userToDate,
+    userSort,
+  ]);
 
   const overviewCards = useMemo(
     () => [
@@ -796,6 +856,110 @@ export function DashboardTabs({
     } finally {
       setUpdatingUserId(null);
     }
+  };
+
+  const updateWelcome = async (id: string, welcomeCompleted: boolean) => {
+    try {
+      setUpdatingUserId(id);
+
+      const response = await fetch(`/api/admin/users/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          welcome_completed: welcomeCompleted,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update welcome status");
+      }
+
+      await router.refresh();
+    } catch (error) {
+      console.error(error);
+      alert("Failed to update welcome status");
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
+  const updateRemarks = async (id: string, remarks: string) => {
+    const current = users.find((user) => user.id === id)?.admin_remarks ?? "";
+    if (remarks === current) return;
+
+    try {
+      setUpdatingUserId(id);
+
+      const response = await fetch(`/api/admin/users/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          admin_remarks: remarks,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update remarks");
+      }
+
+      setRemarksDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
+      await router.refresh();
+    } catch (error) {
+      console.error(error);
+      alert("Failed to update remarks");
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
+  const exportActiveUsers = () => {
+    exportToExcel({
+      sheetName: "Active Users",
+      filename: `active-users-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      rows: filteredUsers.map((user) => ({
+        Name: `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || "—",
+        Phone: user.phone ?? "—",
+        Email: user.email ?? "—",
+        Plan: user.membership_type ?? "regular",
+        "Membership Start": formatDateTime(user.membership_started_at),
+        "Membership End": formatDateTime(user.membership_expires_at),
+        Verification: user.verified ? "Verified" : "Pending",
+        Status: user.status ? "ON" : "OFF",
+        "Created At": formatDateTime(user.created_at),
+        "Last Active": formatDateTime(user.last_active_at),
+        "Welcome Completed": user.welcome_completed ? "Yes" : "No",
+        "Admin Remarks": user.admin_remarks ?? "",
+        "Total Requirements": user.requirement_count ?? 0,
+        "Total Exchange Listings": user.exchange_count ?? 0,
+        "Total Cab Available Listings": user.availability_count ?? 0,
+        "Total Driver Listings": user.driver_requirement_count ?? 0,
+        "Total Posts": user.total_posts ?? 0,
+        Rating:
+          user.rating_average != null ? Number(user.rating_average) : "—",
+      })),
+    });
+  };
+
+  const exportPendingUsers = () => {
+    exportToExcel({
+      sheetName: "Pending Users",
+      filename: `pending-users-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      rows: pendingVerificationUsers.map((user) => ({
+        Name: user.fullName,
+        Phone: user.phone,
+        Email: user.email,
+        Membership: formatMembership(user.membershipType),
+      })),
+    });
   };
 
   const createFraud = async () => {
@@ -1153,66 +1317,81 @@ export function DashboardTabs({
           ))}
         </div>
       ) : activeTab === "pending" ? (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Name
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Phone
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Email
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Membership
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {pendingVerificationUsers.length === 0 ? (
+        <>
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={exportPendingUsers}
+              className="h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Export to Excel
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
                   <tr>
-                    <td
-                      className="px-4 py-10 text-center text-slate-500"
-                      colSpan={4}
-                    >
-                      No users are currently waiting for manual verification.
-                    </td>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Name
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Phone
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Email
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Membership
+                    </th>
                   </tr>
-                ) : (
-                  pendingVerificationUsers.map((user) => (
-                    <tr
-                      key={user.id}
-                      className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => {
-                        router.push(`/dashboard/verification/${user.id}`);
-                      }}
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-800">
-                          {user.fullName}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {user.id.slice(0, 8)}...
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{user.phone}</td>
-                      <td className="px-4 py-3 text-slate-600">{user.email}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {formatMembership(user.membershipType)}
-                        </span>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pendingVerificationUsers.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={4}
+                      >
+                        No users are currently waiting for manual verification.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    pendingVerificationUsers.map((user) => (
+                      <tr
+                        key={user.id}
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => {
+                          router.push(`/dashboard/verification/${user.id}`);
+                        }}
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-slate-800">
+                            {user.fullName}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {user.id.slice(0, 8)}...
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.phone}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.email}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                            {formatMembership(user.membershipType)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       ) : activeTab === "rejected-partial" ? (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
@@ -1452,6 +1631,15 @@ export function DashboardTabs({
         </>
       ) : activeTab === "users" ? (
         <>
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={exportActiveUsers}
+              className="h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Export to Excel
+            </button>
+          </div>
           <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3 overflow-x-auto pb-1">
               <input
@@ -1492,6 +1680,23 @@ export function DashboardTabs({
                 <option value="inactive">OFF</option>
               </select>
 
+              <select
+                value={userSort}
+                onChange={(e) => setUserSort(e.target.value as UserSortKey)}
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              >
+                <option value="created_newest">Created Date: Newest</option>
+                <option value="created_oldest">Created Date: Oldest</option>
+                <option value="last_active_recent">
+                  Last Active: Most Recent
+                </option>
+                <option value="last_active_least">
+                  Last Active: Least Recent
+                </option>
+                <option value="total_posts">Total Posts</option>
+                <option value="rating">Rating</option>
+              </select>
+
               <input
                 type="date"
                 value={userFromDate}
@@ -1514,6 +1719,7 @@ export function DashboardTabs({
                   setUserStatusFilter("all");
                   setUserFromDate("");
                   setUserToDate("");
+                  setUserSort("created_newest");
                 }}
                 className="h-11 whitespace-nowrap rounded-lg bg-red-500 px-4 text-white"
               >
@@ -1523,66 +1729,80 @@ export function DashboardTabs({
           </div>
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="min-w-full table-fixed divide-y divide-slate-200 text-sm">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="w-[220px] px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       User
                     </th>
-
-                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Phone
                     </th>
-
-                    <th className="w-[240px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Email
                     </th>
-
-                    <th className="w-[130px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Plan
                     </th>
-
-                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Created At
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Last Active
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Welcome Completed
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Admin Remarks
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Total Requirements
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Total Exchange Listings
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Total Cab Available Listings
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Total Driver Listings
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Total Posts
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Rating
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Membership Start
                     </th>
-
-                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Membership End
                     </th>
-
-                    <th className="w-[140px] px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Verification
                     </th>
-
-                    <th className="w-[120px] px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
                       Status
                     </th>
-
-                    <th className="w-[140px] px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {users?.length === 0 ? (
+                  {filteredUsers.length === 0 ? (
                     <tr>
                       <td
                         className="px-4 py-10 text-center text-slate-500"
-                        colSpan={7}
+                        colSpan={19}
                       >
                         No users found.
                       </td>
                     </tr>
                   ) : (
                     filteredUsers.map((user) => (
-                      // <tr
-                      //   key={user.id}
-                      //   className={`hover:bg-slate-50 transition-all ${
-                      //     updatingUserId === user.id
-                      //       ? "opacity-50 pointer-events-none"
-                      //       : ""
-                      //   }`}
-                      // >
                       <tr
                         key={user.id}
                         onClick={() =>
@@ -1594,16 +1814,16 @@ export function DashboardTabs({
                             : ""
                         }`}
                       >
-                        <td className="px-4 py-3 font-semibold text-slate-800">
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-800">
                           {user.first_name ?? "—"} {user.last_name ?? "—"}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                           {user.phone ?? "—"}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                           {user.email ?? "—"}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="whitespace-nowrap px-4 py-3">
                           <div onClick={(e) => e.stopPropagation()}>
                             <select
                               defaultValue={user.membership_type ?? "regular"}
@@ -1634,22 +1854,110 @@ export function DashboardTabs({
                             </select>
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-semibold text-slate-800">
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatDateTime(user.created_at)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatDateTime(user.last_active_at)}
+                        </td>
+                        <td
+                          className="whitespace-nowrap px-4 py-3 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            disabled={updatingUserId === user.id}
+                            onClick={() =>
+                              updateWelcome(
+                                user.id,
+                                !Boolean(user.welcome_completed),
+                              )
+                            }
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                              user.welcome_completed
+                                ? "bg-emerald-500"
+                                : "bg-slate-300"
+                            }`}
+                            title={
+                              user.welcome_completed
+                                ? "Welcome completed"
+                                : "Welcome pending"
+                            }
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                                user.welcome_completed
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                              }`}
+                            />
+                          </button>
+                        </td>
+                        <td
+                          className="min-w-[180px] px-4 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            value={
+                              remarksDrafts[user.id] ??
+                              user.admin_remarks ??
+                              ""
+                            }
+                            disabled={updatingUserId === user.id}
+                            onChange={(e) =>
+                              setRemarksDrafts((prev) => ({
+                                ...prev,
+                                [user.id]: e.target.value,
+                              }))
+                            }
+                            onBlur={(e) =>
+                              updateRemarks(user.id, e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            placeholder="Add remarks..."
+                            className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-800"
+                          />
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-800">
+                          {user.requirement_count ?? 0}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-800">
+                          {user.exchange_count ?? 0}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-800">
+                          {user.availability_count ?? 0}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-800">
+                          {user.driver_requirement_count ?? 0}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-800">
+                          {user.total_posts ?? 0}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-800">
+                          {user.rating_average != null
+                            ? Number(user.rating_average).toFixed(2)
+                            : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-800">
                           {user.membership_started_at
                             ? new Date(
                                 user.membership_started_at,
                               ).toLocaleDateString()
                             : "-"}
                         </td>
-
-                        <td className="px-4 py-3 font-semibold text-slate-800">
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-800">
                           {user.membership_expires_at
                             ? new Date(
                                 user.membership_expires_at,
                               ).toLocaleDateString()
                             : "-"}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="whitespace-nowrap px-4 py-3">
                           <span
                             className={`rounded-full px-3 py-1 text-xs font-semibold ${
                               user.verified
@@ -1660,7 +1968,7 @@ export function DashboardTabs({
                             {user.verified ? "Verified" : "Pending"}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="whitespace-nowrap px-4 py-3">
                           {updatingUserId === user.id ? (
                             <span className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
                               <span className="h-2 w-2 animate-pulse rounded-full bg-blue-600" />
@@ -1678,8 +1986,11 @@ export function DashboardTabs({
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <div
+                            className="flex items-center gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <button
                               disabled={updatingUserId === user.id}
                               onClick={() =>

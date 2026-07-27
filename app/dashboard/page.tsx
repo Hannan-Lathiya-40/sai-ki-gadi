@@ -25,7 +25,55 @@ type UserRow = {
   status: boolean | null;
   verification_status: string | null;
   created_at: string | null;
+  welcome_completed: boolean | null;
+  admin_remarks: string | null;
+  last_active_at: string | null;
+  rating_average: number | null;
+  rating_count: number | null;
+  requirement_count: number;
+  exchange_count: number;
+  availability_count: number;
+  driver_requirement_count: number;
+  total_posts: number;
 };
+
+type UserIdRow = {
+  user_id: string;
+};
+
+function countByUserId(rows: UserIdRow[] | null | undefined): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows ?? []) {
+    if (!row.user_id) continue;
+    counts.set(row.user_id, (counts.get(row.user_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+async function fetchAllUserIds(table: string): Promise<UserIdRow[]> {
+  const pageSize = 1000;
+  let from = 0;
+  const all: UserIdRow[] = [];
+
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .select("user_id")
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw new Error(`Unable to fetch ${table} owners: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as UserIdRow[];
+    all.push(...rows);
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return all;
+}
 
 type IdentityDocRow = {
   user_id: string;
@@ -129,11 +177,18 @@ function fullNameOf(user: UserRow): string {
 }
 
 export default async function DashboardPage() {
-  const [{ data: users, error: usersError }, docsResult] = await Promise.all([
+  const [
+    { data: users, error: usersError },
+    docsResult,
+    requirementOwnerIds,
+    exchangeOwnerIds,
+    availabilityOwnerIds,
+    driverOwnerIds,
+  ] = await Promise.all([
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status, created_at",
+        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status, created_at, welcome_completed, admin_remarks, last_active_at, rating_average, rating_count",
       ),
     (async () => {
       // Prefer current mobile schema columns.
@@ -151,6 +206,10 @@ export default async function DashboardPage() {
           "user_id, aadhaar_number, aadhaar_uploaded, pan_uploaded, gst_uploaded, aadhaar_file_path, pan_file_path, gst_file_path",
         );
     })(),
+    fetchAllUserIds("requirements"),
+    fetchAllUserIds("exchange_listings"),
+    fetchAllUserIds("cab_avail_listings"),
+    fetchAllUserIds("driver_listings"),
   ]);
   const { data: docs, error: docsError } = docsResult;
 
@@ -163,7 +222,35 @@ export default async function DashboardPage() {
     );
   }
 
-  const allUsers: UserRow[] = users ?? [];
+  const requirementCounts = countByUserId(requirementOwnerIds);
+  const exchangeCounts = countByUserId(exchangeOwnerIds);
+  const availabilityCounts = countByUserId(availabilityOwnerIds);
+  const driverCounts = countByUserId(driverOwnerIds);
+
+  const allUsers: UserRow[] = (users ?? []).map((user) => {
+    const requirement_count = requirementCounts.get(user.id) ?? 0;
+    const exchange_count = exchangeCounts.get(user.id) ?? 0;
+    const availability_count = availabilityCounts.get(user.id) ?? 0;
+    const driver_requirement_count = driverCounts.get(user.id) ?? 0;
+
+    return {
+      ...user,
+      welcome_completed: user.welcome_completed ?? false,
+      admin_remarks: user.admin_remarks ?? null,
+      last_active_at: user.last_active_at ?? null,
+      rating_average: user.rating_average ?? null,
+      rating_count: user.rating_count ?? null,
+      requirement_count,
+      exchange_count,
+      availability_count,
+      driver_requirement_count,
+      total_posts:
+        requirement_count +
+        exchange_count +
+        availability_count +
+        driver_requirement_count,
+    };
+  });
   const allDocs: IdentityDocRow[] = docs ?? [];
 
   const membership: MembershipCounts = {

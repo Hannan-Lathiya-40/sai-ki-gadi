@@ -15,12 +15,26 @@ export async function PUT(
 
     const body = await request.json();
 
-    const { status, membership_type, membership_duration_days } = body;
+    const {
+      status,
+      membership_type,
+      membership_duration_days,
+      welcome_completed,
+      admin_remarks,
+    } = body;
 
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     if (typeof status === "boolean") {
       updateData.status = status;
+    }
+
+    if (typeof welcome_completed === "boolean") {
+      updateData.welcome_completed = welcome_completed;
+    }
+
+    if (typeof admin_remarks === "string") {
+      updateData.admin_remarks = admin_remarks;
     }
 
     if (membership_type) {
