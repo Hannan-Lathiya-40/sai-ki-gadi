@@ -175,6 +175,13 @@ type FraudReport = {
   } | null;
 };
 
+type PrioritySettings = {
+  matching_platinum_minutes: number;
+  all_platinum_minutes: number;
+  all_gold_minutes: number;
+  updated_at?: string | null;
+};
+
 type DashboardTabsProps = {
   totalUsers: number;
   membership: MembershipCounts;
@@ -191,18 +198,7 @@ type DashboardTabsProps = {
   requirements: Requirement[];
   exchanges: Exchange[];
   fraudReports: FraudReport[];
-  // winners: {
-  //   id: string;
-  //   date: string;
-  //   slot: string;
-  //   image: string | null;
-  //   created_at: string;
-  //   users: {
-  //     first_name: string;
-  //     last_name: string;
-  //     phone: string;
-  //   } | null;
-  // }[];
+  prioritySettings: PrioritySettings;
 };
 
 type TabKey =
@@ -216,7 +212,8 @@ type TabKey =
   | "users"
   | "requirements"
   | "exchanges"
-  | "fraud-reports";
+  | "fraud-reports"
+  | "priority-settings";
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   switch (value) {
@@ -250,6 +247,7 @@ export function DashboardTabs({
   requirements,
   exchanges,
   fraudReports,
+  prioritySettings,
 }: DashboardTabsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -349,6 +347,79 @@ export function DashboardTabs({
   useEffect(() => {
     setSliderList(sliders);
   }, [sliders]);
+
+  const [matchingPlatinumMinutes, setMatchingPlatinumMinutes] = useState(
+    String(prioritySettings?.matching_platinum_minutes ?? 4),
+  );
+  const [allPlatinumMinutes, setAllPlatinumMinutes] = useState(
+    String(prioritySettings?.all_platinum_minutes ?? 4),
+  );
+  const [allGoldMinutes, setAllGoldMinutes] = useState(
+    String(prioritySettings?.all_gold_minutes ?? 3),
+  );
+  const [savingPrioritySettings, setSavingPrioritySettings] = useState(false);
+  const [prioritySettingsMessage, setPrioritySettingsMessage] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    setMatchingPlatinumMinutes(
+      String(prioritySettings?.matching_platinum_minutes ?? 4),
+    );
+    setAllPlatinumMinutes(String(prioritySettings?.all_platinum_minutes ?? 4));
+    setAllGoldMinutes(String(prioritySettings?.all_gold_minutes ?? 3));
+  }, [prioritySettings]);
+
+  async function savePrioritySettings() {
+    const matching = Number(matchingPlatinumMinutes);
+    const platinum = Number(allPlatinumMinutes);
+    const gold = Number(allGoldMinutes);
+
+    if (
+      ![matching, platinum, gold].every(
+        (n) => Number.isInteger(n) && n > 0 && n <= 1440,
+      )
+    ) {
+      setPrioritySettingsMessage(
+        "Each duration must be a whole number between 1 and 1440 minutes.",
+      );
+      return;
+    }
+
+    setSavingPrioritySettings(true);
+    setPrioritySettingsMessage(null);
+
+    try {
+      const response = await fetch("/api/admin/priority-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matching_platinum_minutes: matching,
+          all_platinum_minutes: platinum,
+          all_gold_minutes: gold,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setPrioritySettingsMessage(payload?.error ?? "Failed to save settings.");
+        return;
+      }
+      setMatchingPlatinumMinutes(String(payload.matching_platinum_minutes));
+      setAllPlatinumMinutes(String(payload.all_platinum_minutes));
+      setAllGoldMinutes(String(payload.all_gold_minutes));
+      setPrioritySettingsMessage(
+        `Saved. Timeline: ${payload.matching_platinum_minutes} + ${payload.all_platinum_minutes} + ${payload.all_gold_minutes} = ${
+          payload.matching_platinum_minutes +
+          payload.all_platinum_minutes +
+          payload.all_gold_minutes
+        } minutes to open access.`,
+      );
+    } catch {
+      setPrioritySettingsMessage("Failed to save settings.");
+    } finally {
+      setSavingPrioritySettings(false);
+    }
+  }
 
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
@@ -1299,6 +1370,16 @@ export function DashboardTabs({
           onClick={() => setActiveTab("fraud-reports")}
         >
           Fraud Reports ({fraudReports?.length || 0})
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "priority-settings"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("priority-settings")}
+        >
+          Priority Timeline
         </button>
       </div>
 
@@ -2706,6 +2787,111 @@ export function DashboardTabs({
             </div>
           </div>
         </>
+      ) : activeTab === "priority-settings" ? (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900">
+            Priority Timeline Settings
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Durations control Requirement feed access windows. Changes apply on
+            the next feed load — no app deploy required.
+          </p>
+
+          <div className="mt-6 grid gap-5 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">
+                Cab Matching + Platinum Priority Duration
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={matchingPlatinumMinutes}
+                  onChange={(e) => setMatchingPlatinumMinutes(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-500">
+                  Minutes
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">
+                Platinum Priority Duration
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={allPlatinumMinutes}
+                  onChange={(e) => setAllPlatinumMinutes(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-500">
+                  Minutes
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">
+                Gold Priority Duration
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={allGoldMinutes}
+                  onChange={(e) => setAllGoldMinutes(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-500">
+                  Minutes
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">Preview timeline</p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              <li>
+                0–{Number(matchingPlatinumMinutes) || 0} min → matching_platinum
+                (Platinum + matching cab)
+              </li>
+              <li>
+                Next {Number(allPlatinumMinutes) || 0} min → all_platinum
+              </li>
+              <li>Next {Number(allGoldMinutes) || 0} min → all_gold</li>
+              <li>
+                After{" "}
+                {(Number(matchingPlatinumMinutes) || 0) +
+                  (Number(allPlatinumMinutes) || 0) +
+                  (Number(allGoldMinutes) || 0)}{" "}
+                min → everyone
+              </li>
+            </ol>
+          </div>
+
+          {prioritySettingsMessage ? (
+            <p className="mt-4 text-sm font-medium text-indigo-700">
+              {prioritySettingsMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => void savePrioritySettings()}
+            disabled={savingPrioritySettings}
+            className="mt-6 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {savingPrioritySettings ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
       ) : (
         <>
           <div className="mb-4 flex justify-end">

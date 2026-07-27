@@ -339,6 +339,22 @@ export default async function DashboardPage() {
       ascending: false,
     });
 
+  const { data: prioritySettingsRow } = await supabaseAdmin
+    .from("requirement_priority_settings")
+    .select(
+      "matching_platinum_minutes, all_platinum_minutes, all_gold_minutes, updated_at",
+    )
+    .eq("id", 1)
+    .maybeSingle();
+
+  const prioritySettings = {
+    matching_platinum_minutes:
+      prioritySettingsRow?.matching_platinum_minutes ?? 4,
+    all_platinum_minutes: prioritySettingsRow?.all_platinum_minutes ?? 4,
+    all_gold_minutes: prioritySettingsRow?.all_gold_minutes ?? 3,
+    updated_at: prioritySettingsRow?.updated_at ?? null,
+  };
+
   const { data: requirements, error: requirementsError } = await supabaseAdmin
     .from("requirements")
     .select(
@@ -424,6 +440,7 @@ export default async function DashboardPage() {
           requirements={requirements ?? []}
           exchanges={exchanges ?? []}
           fraudReports={fraudReports ?? []}
+          prioritySettings={prioritySettings}
         />
       </main>
     </div>
