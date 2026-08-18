@@ -24,6 +24,8 @@ type UserDetailRow = {
   membership_type: string | null;
   verified: boolean | null;
   created_at: string | null;
+  reference_name: string | null;
+  reference_phone: string | null;
 };
 
 type IdentityDocRow = {
@@ -81,7 +83,7 @@ export default async function VerificationUserPage({
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, business_name, business_description, address_line_1, address_line_2, city, state, pincode, membership_type, verified, created_at",
+        "id, first_name, last_name, phone, email, business_name, business_description, address_line_1, address_line_2, city, state, pincode, membership_type, verified, created_at, reference_name, reference_phone",
       )
       .eq("id", userId)
       .maybeSingle<UserDetailRow>(),
@@ -242,6 +244,30 @@ export default async function VerificationUserPage({
                 Address
               </p>
               <p className="mt-1 text-sm text-slate-900">{userAddress(user)}</p>
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Reference Details
+              </p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Reference Name
+                  </p>
+                  <p className="mt-1 text-sm text-slate-900">
+                    {user.reference_name || "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Reference Phone
+                  </p>
+                  <p className="mt-1 text-sm text-slate-900">
+                    {user.reference_phone || "—"}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
