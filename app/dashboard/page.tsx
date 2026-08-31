@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
-import { supabaseAdmin, usingServiceRole } from "@/lib/supabase-admin";
+import { supabaseAdmin, usingServiceRole, serviceRoleConfigIssue, supabaseProjectHost } from "@/lib/supabase-admin";
 
-import { DashboardTabs } from "./dashboard-tabs";
+import { DashboardTabs, type ProfileChangeRequestRow, type VehicleVerificationRow, type RouteMinimumFareRow } from "./dashboard-tabs";
 
 export const metadata: Metadata = {
   title: "Dashboard | Sai ki Gadi Admin",
@@ -30,6 +30,14 @@ type UserRow = {
   last_active_at: string | null;
   rating_average: number | null;
   rating_count: number | null;
+  blood_group: string | null;
+  birth_date: string | null;
+  date_of_birth: string | null;
+  reference_1_name: string | null;
+  reference_1_mobile: string | null;
+  reference_2_name: string | null;
+  reference_2_mobile: string | null;
+  user_roles: string[] | null;
   requirement_count: number;
   exchange_count: number;
   availability_count: number;
@@ -188,7 +196,7 @@ export default async function DashboardPage() {
     supabaseAdmin
       .from("users")
       .select(
-        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status, created_at, welcome_completed, admin_remarks, last_active_at, rating_average, rating_count",
+        "id, first_name, last_name, phone, email, membership_type,membership_started_at,membership_expires_at,membership_duration_days, verified, status, verification_status, created_at, welcome_completed, admin_remarks, last_active_at, rating_average, rating_count, blood_group, birth_date, date_of_birth, reference_1_name, reference_1_mobile, reference_2_name, reference_2_mobile, user_roles",
       ),
     (async () => {
       // Prefer current mobile schema columns.
@@ -240,6 +248,14 @@ export default async function DashboardPage() {
       last_active_at: user.last_active_at ?? null,
       rating_average: user.rating_average ?? null,
       rating_count: user.rating_count ?? null,
+      blood_group: user.blood_group ?? null,
+      birth_date: user.birth_date ?? null,
+      date_of_birth: user.date_of_birth ?? null,
+      reference_1_name: user.reference_1_name ?? null,
+      reference_1_mobile: user.reference_1_mobile ?? null,
+      reference_2_name: user.reference_2_name ?? null,
+      reference_2_mobile: user.reference_2_mobile ?? null,
+      user_roles: Array.isArray(user.user_roles) ? user.user_roles : null,
       requirement_count,
       exchange_count,
       availability_count,
@@ -421,6 +437,120 @@ export default async function DashboardPage() {
       ascending: false,
     });
 
+  const {
+    data: profileChangeRequestRows,
+    error: profileChangeRequestsError,
+  } = await supabaseAdmin
+    .from("profile_change_requests")
+    .select(
+      `
+      id,
+      user_id,
+      status,
+      requested_changes,
+      rejection_reason,
+      requested_at,
+      reviewed_at,
+      reviewed_by
+    `,
+    )
+    .order("requested_at", { ascending: false })
+    .limit(200);
+
+  const usersById = new Map(
+    (allUsers ?? []).map((u) => [
+      u.id,
+      {
+        first_name: u.first_name,
+        last_name: u.last_name,
+        phone: u.phone,
+      },
+    ]),
+  );
+
+  const profileChangeRequests: ProfileChangeRequestRow[] = (
+    profileChangeRequestRows ?? []
+  ).map((row) => ({
+    id: row.id,
+    user_id: row.user_id,
+    status: row.status,
+    requested_changes: row.requested_changes,
+    rejection_reason: row.rejection_reason,
+    requested_at: row.requested_at,
+    reviewed_at: row.reviewed_at,
+    reviewed_by: row.reviewed_by,
+    users: usersById.get(row.user_id) ?? null,
+  }));
+
+  const {
+    data: vehicleRows,
+    error: vehiclesError,
+  } = await supabaseAdmin
+    .from("user_vehicles")
+    .select(
+      `
+      id,
+      user_id,
+      registration_number,
+      normalized_registration_number,
+      verification_status,
+      rejection_reason,
+      created_at,
+      reviewed_at,
+      reviewed_by
+    `,
+    )
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  const vehicles: VehicleVerificationRow[] = (vehicleRows ?? []).map((row) => ({
+    id: row.id,
+    user_id: row.user_id,
+    registration_number: row.registration_number,
+    normalized_registration_number: row.normalized_registration_number,
+    verification_status: row.verification_status,
+    rejection_reason: row.rejection_reason,
+    created_at: row.created_at,
+    reviewed_at: row.reviewed_at,
+    reviewed_by: row.reviewed_by,
+    users: usersById.get(row.user_id) ?? null,
+  }));
+
+  const {
+    data: routeMinimumFareRows,
+    error: routeMinimumFaresError,
+  } = await supabaseAdmin
+    .from("route_minimum_fares")
+    .select(
+      `
+      id,
+      from_city,
+      from_state,
+      to_city,
+      to_state,
+      minimum_fare,
+      is_active,
+      created_at,
+      updated_at
+    `,
+    )
+    .order("updated_at", { ascending: false })
+    .limit(500);
+
+  const routeMinimumFares: RouteMinimumFareRow[] = (
+    routeMinimumFareRows ?? []
+  ).map((row) => ({
+    id: row.id,
+    from_city: row.from_city,
+    from_state: row.from_state,
+    to_city: row.to_city,
+    to_state: row.to_state,
+    minimum_fare: Number(row.minimum_fare),
+    is_active: Boolean(row.is_active),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+
   return (
     <div className="min-h-screen bg-slate-100">
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -433,6 +563,13 @@ export default async function DashboardPage() {
           rejectedPartialUsers={rejectedPartialUsers}
           notStartedVerificationUsers={notStartedVerificationUsers}
           showRlsHint={!usingServiceRole}
+          serviceRoleIssue={serviceRoleConfigIssue()}
+          supabaseHost={supabaseProjectHost()}
+          profileChangeRequestsError={
+            profileChangeRequestsError?.message ?? null
+          }
+          vehiclesError={vehiclesError?.message ?? null}
+          routeMinimumFaresError={routeMinimumFaresError?.message ?? null}
           winnerUser={winners ?? []}
           cities={cities ?? []}
           sliders={sliders ?? []}
@@ -441,6 +578,9 @@ export default async function DashboardPage() {
           exchanges={exchanges ?? []}
           fraudReports={fraudReports ?? []}
           prioritySettings={prioritySettings}
+          profileChangeRequests={profileChangeRequests}
+          vehicles={vehicles}
+          routeMinimumFares={routeMinimumFares}
         />
       </main>
     </div>
