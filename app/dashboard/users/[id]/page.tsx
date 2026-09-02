@@ -1,46 +1,15 @@
-import Link from "next/link";
 import { BackButton } from "@/app/components/back-button";
 import { notFound } from "next/navigation";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { DocumentManager } from "../../../dashboard/verification/[userId]/document-manager";
 
-// type UserDetailRow = {
-//   id: string;
-//   first_name: string | null;
-//   last_name: string | null;
-//   phone: string | null;
-//   email: string | null;
-//   business_name: string | null;
-//   address_line_1: string | null;
-//   address_line_2: string | null;
-//   city: string | null;
-//   state: string | null;
-//   pincode: string | null;
-//   membership_type: string | null;
-//   verified: boolean | null;
-//   status: boolean | null;
-//   created_at: string | null;
-// };
-type UserDetailRow = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  phone: string | null;
-  email: string | null;
-  business_name: string | null;
-  address_line_1: string | null;
-  address_line_2: string | null;
-  city: string | null;
-  state: string | null;
-  pincode: string | null;
-  membership_type: string | null;
-  verified: boolean | null;
-  status: boolean | null;
-  created_at: string | null;
-  profile_image: string | null;
-  reference_name: string | null;
-  reference_phone: string | null;
-};
+import {
+  ADMIN_USER_DETAIL_SELECT,
+  AdminUserProfileSections,
+  adminUserFullName,
+  normalizeAdminUserDetail,
+} from "@/app/dashboard/components/admin-user-profile-sections";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
+import { DocumentManager } from "../../../dashboard/verification/[userId]/document-manager";
 
 type IdentityDocRow = {
   user_id: string;
@@ -71,21 +40,36 @@ async function createSignedUrl(path: string): Promise<string | null> {
   return data.signedUrl;
 }
 
-function fullName(user: UserDetailRow): string {
-  const name = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
-  if (name) return name;
-  return user.email || user.phone || user.id;
-}
+async function fetchAdminUser(id: string) {
+  const primary = await supabaseAdmin
+    .from("users")
+    .select(ADMIN_USER_DETAIL_SELECT)
+    .eq("id", id)
+    .maybeSingle();
 
-function userAddress(user: UserDetailRow): string {
-  const parts = [
-    user.address_line_1,
-    user.address_line_2,
-    user.city,
-    user.state,
-    user.pincode,
-  ].filter(Boolean);
-  return parts.join(", ") || "—";
+  if (!primary.error && primary.data) {
+    return normalizeAdminUserDetail(
+      primary.data as unknown as Record<string, unknown>,
+    );
+  }
+
+  // Fallback: if an explicit column is missing from schema cache, still load the row.
+  const fallback = await supabaseAdmin
+    .from("users")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (fallback.error) {
+    throw new Error(
+      `Unable to load user: ${primary.error?.message ?? fallback.error.message}`,
+    );
+  }
+  if (!fallback.data) return null;
+
+  return normalizeAdminUserDetail(
+    fallback.data as unknown as Record<string, unknown>,
+  );
 }
 
 export default async function UserDetailPage({
@@ -95,21 +79,8 @@ export default async function UserDetailPage({
 }) {
   const { id } = await params;
 
-  const [{ data: user, error: userError }, docsResult] = await Promise.all([
-    // supabaseAdmin
-    //   .from("users")
-    //   .select(
-    //     "id, first_name, last_name, phone, email, business_name, address_line_1, address_line_2, city, state, pincode, membership_type, verified, status, created_at",
-    //   )
-    //   .eq("id", id)
-    //   .maybeSingle<UserDetailRow>(),
-    supabaseAdmin
-      .from("users")
-      .select(
-        "id, first_name, last_name, phone, email, business_name, address_line_1, address_line_2, city, state, pincode, membership_type, verified, status, created_at, profile_image, reference_name, reference_phone",
-      )
-      .eq("id", id)
-      .maybeSingle<UserDetailRow>(),
+  const [user, docsResult] = await Promise.all([
+    fetchAdminUser(id),
     (async () => {
       const modern = await supabaseAdmin
         .from("user_identity_documents")
@@ -129,7 +100,6 @@ export default async function UserDetailPage({
     })(),
   ]);
 
-  if (userError) throw new Error(`Unable to load user: ${userError.message}`);
   if (!user) notFound();
 
   const { data: docs } = docsResult;
@@ -183,157 +153,46 @@ export default async function UserDetailPage({
     })),
   );
 
+  const name = adminUserFullName(user);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        {/* <div className="mb-6">
-          <Link
-            href="/dashboard"
-            className="text-sm font-semibold text-indigo-600 hover:underline"
-          >
-            ← Back to dashboard
-          </Link>
-        </div> */}
         <div className="mb-6">
           <BackButton />
         </div>
 
-        {/* User Info Section */}
-        {/* User Info Section */}
         <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-start gap-5">
             {user.profile_image ? (
               <img
                 src={user.profile_image}
-                alt={fullName(user)}
+                alt={name}
                 className="h-20 w-20 flex-shrink-0 rounded-full border border-slate-200 object-cover"
               />
             ) : (
               <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xl font-bold text-slate-400">
-                {fullName(user).charAt(0).toUpperCase()}
+                {name.charAt(0).toUpperCase()}
               </div>
             )}
 
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                {fullName(user)}
+                {name}
               </h1>
               <p className="mt-1 text-sm text-slate-600">
-                Review user details and uploaded verification documents.
+                Complete profile, membership, roles, and verification details.
+                Empty values show as -.
               </p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Membership
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {user.membership_type || "user"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Verification Status
-              </p>
-              <p
-                className={`mt-1 text-sm font-semibold ${user.verified ? "text-emerald-600" : "text-amber-600"}`}
-              >
-                {user.verified ? "Verified" : "Unverified"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Account Status
-              </p>
-              <p
-                className={`mt-1 text-sm font-semibold ${user.status ? "text-emerald-600" : "text-red-600"}`}
-              >
-                {user.status ? "Active" : "Blocked"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Joined
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {user.created_at
-                  ? new Date(user.created_at).toLocaleString()
-                  : "—"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Phone
-              </p>
-              <p className="mt-1 text-sm text-slate-900">{user.phone || "—"}</p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Email
-              </p>
-              <p className="mt-1 text-sm text-slate-900">{user.email || "—"}</p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Aadhaar Number
-              </p>
-              <p className="mt-1 text-sm text-slate-900">
-                {docs?.aadhaar_number || "—"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Business Name
-              </p>
-              <p className="mt-1 text-sm text-slate-900">
-                {user.business_name || "—"}
-              </p>
-            </div>
-
-            <div className="sm:col-span-2 lg:col-span-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Address
-              </p>
-              <p className="mt-1 text-sm text-slate-900">{userAddress(user)}</p>
-            </div>
-
-            <div className="sm:col-span-2 lg:col-span-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Reference Details
-              </p>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Reference Name
-                  </p>
-                  <p className="mt-1 text-sm text-slate-900">
-                    {user.reference_name || "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Reference Phone
-                  </p>
-                  <p className="mt-1 text-sm text-slate-900">
-                    {user.reference_phone || "—"}
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
-        {/* Documents Section */}
-        {/* Documents Section */}
+        <AdminUserProfileSections
+          user={user}
+          aadhaarNumber={docs?.aadhaar_number ?? null}
+        />
+
         <DocumentManager
           userId={id}
           documents={documents}

@@ -58,12 +58,52 @@ type AppUser = {
   last_active_at: string | null;
   rating_average: number | null;
   rating_count: number | null;
+  blood_group: string | null;
+  birth_date: string | null;
+  date_of_birth: string | null;
+  reference_1_name: string | null;
+  reference_1_mobile: string | null;
+  reference_2_name: string | null;
+  reference_2_mobile: string | null;
+  user_roles: string[] | null;
   requirement_count: number;
   exchange_count: number;
   availability_count: number;
   driver_requirement_count: number;
   total_posts: number;
 };
+
+const USER_ROLE_LABELS: Record<string, string> = {
+  car_owner: "Car Owner",
+  driver: "Driver",
+  booking_agent: "Booking Agent",
+};
+
+function cellDash(value: string | number | null | undefined): string {
+  if (value == null) return "-";
+  const text = String(value).trim();
+  return text ? text : "-";
+}
+
+function formatBirthDateCell(value: string | null | undefined): string {
+  if (!value) return "-";
+  const iso = String(value).trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${date.getFullYear()}`;
+}
+
+function formatUserRolesCell(roles: string[] | null | undefined): string {
+  if (!roles || roles.length === 0) return "-";
+  const labels = roles
+    .map((role) => USER_ROLE_LABELS[role] ?? role)
+    .filter(Boolean);
+  return labels.length > 0 ? labels.join(", ") : "-";
+}
 
 type UserSortKey =
   | "created_newest"
@@ -182,6 +222,53 @@ type PrioritySettings = {
   updated_at?: string | null;
 };
 
+export type ProfileChangeRequestRow = {
+  id: string;
+  user_id: string;
+  status: string;
+  requested_changes:
+    | { field?: string; old_value?: string; new_value?: string }[]
+    | null;
+  rejection_reason: string | null;
+  requested_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  users: {
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+  } | null;
+};
+
+export type VehicleVerificationRow = {
+  id: string;
+  user_id: string;
+  registration_number: string;
+  normalized_registration_number: string;
+  verification_status: string;
+  rejection_reason: string | null;
+  created_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  users: {
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+  } | null;
+};
+
+export type RouteMinimumFareRow = {
+  id: string;
+  from_city: string;
+  from_state: string;
+  to_city: string;
+  to_state: string;
+  minimum_fare: number;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 type DashboardTabsProps = {
   totalUsers: number;
   membership: MembershipCounts;
@@ -199,6 +286,14 @@ type DashboardTabsProps = {
   exchanges: Exchange[];
   fraudReports: FraudReport[];
   prioritySettings: PrioritySettings;
+  profileChangeRequests: ProfileChangeRequestRow[];
+  vehicles: VehicleVerificationRow[];
+  routeMinimumFares: RouteMinimumFareRow[];
+  serviceRoleIssue?: string | null;
+  profileChangeRequestsError?: string | null;
+  vehiclesError?: string | null;
+  routeMinimumFaresError?: string | null;
+  supabaseHost?: string | null;
 };
 
 type TabKey =
@@ -213,7 +308,11 @@ type TabKey =
   | "requirements"
   | "exchanges"
   | "fraud-reports"
-  | "priority-settings";
+  | "priority-settings"
+  | "profile-changes"
+  | "car-verification"
+  | "minimum-fares";
+
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   switch (value) {
@@ -248,10 +347,24 @@ export function DashboardTabs({
   exchanges,
   fraudReports,
   prioritySettings,
+  profileChangeRequests,
+  vehicles,
+  routeMinimumFares,
+  serviceRoleIssue = null,
+  profileChangeRequestsError = null,
+  vehiclesError = null,
+  routeMinimumFaresError = null,
+  supabaseHost = null,
 }: DashboardTabsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [profileChangeFilter, setProfileChangeFilter] = useState<
+    "pending" | "approved" | "rejected" | "all"
+  >("pending");
+  const [vehicleFilter, setVehicleFilter] = useState<
+    "pending" | "approved" | "rejected" | "all"
+  >("pending");
 
   useEffect(() => {
     const tab = searchParams.get("tab") as TabKey | null;
@@ -291,7 +404,20 @@ export function DashboardTabs({
   const [remarksDrafts, setRemarksDrafts] = useState<Record<string, string>>(
     {},
   );
+  const [exportingRequirements, setExportingRequirements] = useState(false);
   const pendingCount = pendingVerificationUsers.length;
+  const pendingProfileChangeCount = profileChangeRequests.filter(
+    (r) => r.status === "pending",
+  ).length;
+  const filteredProfileChangeRequests = profileChangeRequests.filter((r) =>
+    profileChangeFilter === "all" ? true : r.status === profileChangeFilter,
+  );
+  const pendingVehicleCount = vehicles.filter(
+    (v) => v.verification_status === "pending",
+  ).length;
+  const filteredVehicles = vehicles.filter((v) =>
+    vehicleFilter === "all" ? true : v.verification_status === vehicleFilter,
+  );
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
   const [showWinnerModal, setShowWinnerModal] = useState(false);
@@ -325,6 +451,18 @@ export function DashboardTabs({
   const [savingCity, setSavingCity] = useState(false);
 
   const [deletingCityId, setDeletingCityId] = useState<number | null>(null);
+
+  const [showMinimumFareModal, setShowMinimumFareModal] = useState(false);
+  const [editingMinimumFareId, setEditingMinimumFareId] = useState<
+    string | null
+  >(null);
+  const [minFareFromCity, setMinFareFromCity] = useState("");
+  const [minFareFromState, setMinFareFromState] = useState("");
+  const [minFareToCity, setMinFareToCity] = useState("");
+  const [minFareToState, setMinFareToState] = useState("");
+  const [minFareAmount, setMinFareAmount] = useState("");
+  const [minFareActive, setMinFareActive] = useState(true);
+  const [savingMinimumFare, setSavingMinimumFare] = useState(false);
 
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -997,10 +1135,18 @@ export function DashboardTabs({
       sheetName: "Active Users",
       filename: `active-users-${new Date().toISOString().slice(0, 10)}.xlsx`,
       rows: filteredUsers.map((user) => ({
-        Name: `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || "—",
-        Phone: user.phone ?? "—",
-        Email: user.email ?? "—",
+        Name: `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || "-",
+        Phone: cellDash(user.phone),
+        Email: cellDash(user.email),
         Plan: user.membership_type ?? "regular",
+        "Date of Birth": formatBirthDateCell(user.date_of_birth),
+        "Birth Date": formatBirthDateCell(user.birth_date),
+        "Blood Group": cellDash(user.blood_group),
+        "Reference 1 Name": cellDash(user.reference_1_name),
+        "Reference 1 Mobile": cellDash(user.reference_1_mobile),
+        "Reference 2 Name": cellDash(user.reference_2_name),
+        "Reference 2 Mobile": cellDash(user.reference_2_mobile),
+        "User Roles": formatUserRolesCell(user.user_roles),
         "Membership Start": formatDateTime(user.membership_started_at),
         "Membership End": formatDateTime(user.membership_expires_at),
         Verification: user.verified ? "Verified" : "Pending",
@@ -1015,7 +1161,7 @@ export function DashboardTabs({
         "Total Driver Listings": user.driver_requirement_count ?? 0,
         "Total Posts": user.total_posts ?? 0,
         Rating:
-          user.rating_average != null ? Number(user.rating_average) : "—",
+          user.rating_average != null ? Number(user.rating_average) : "-",
       })),
     });
   };
@@ -1031,6 +1177,76 @@ export function DashboardTabs({
         Membership: formatMembership(user.membershipType),
       })),
     });
+  };
+
+  const exportRequirements = () => {
+    try {
+      setExportingRequirements(true);
+
+      const rows = (filteredRequirements ?? []).map((item) => {
+        const userName =
+          `${item.users?.first_name ?? ""} ${item.users?.last_name ?? ""}`.trim();
+        const assignedName = item.assigned_user
+          ? `${item.assigned_user.first_name ?? ""} ${item.assigned_user.last_name ?? ""}`.trim()
+          : "";
+
+        const source = [item.source_city, item.source_state]
+          .filter(Boolean)
+          .join(", ");
+        const destination = [item.destination_city, item.destination_state]
+          .filter(Boolean)
+          .join(", ");
+
+        const route =
+          item.source_city || item.destination_city
+            ? `${cellDash(item.source_city)} → ${cellDash(item.destination_city)}`
+            : "-";
+
+        return {
+          User: cellDash(userName),
+          Phone: cellDash(item.users?.phone),
+          Route: route,
+          Source: cellDash(source),
+          Destination: cellDash(destination),
+          "Car Type": cellDash(item.car_type),
+          "Trip Type": cellDash(item.trip_type),
+          Fare: item.price != null && String(item.price).trim() !== ""
+            ? item.price
+            : "-",
+          "Journey Start": item.journey_start_at
+            ? formatDateTime(item.journey_start_at)
+            : "-",
+          Status: item.booked ? "Booked" : "Pending",
+          "Booked By": cellDash(assignedName),
+          "Driver Phone": cellDash(item.assigned_user?.phone),
+          "Booking Remark": cellDash(item.booking_remark),
+          "Ride Type": cellDash(item.ride_type),
+          "Created At": item.created_at
+            ? formatDateTime(item.created_at)
+            : "-",
+        };
+      });
+
+      const statusSuffix =
+        reqStatus === "booked"
+          ? "_booked"
+          : reqStatus === "pending"
+            ? "_pending"
+            : "";
+
+      exportToExcel({
+        sheetName: "Requirements",
+        filename: `requirements${statusSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        rows,
+      });
+
+      alert("Requirements exported successfully.");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to export requirements.");
+    } finally {
+      setExportingRequirements(false);
+    }
   };
 
   const createFraud = async () => {
@@ -1176,6 +1392,113 @@ export function DashboardTabs({
     }
   };
 
+  const resetMinimumFareForm = () => {
+    setEditingMinimumFareId(null);
+    setMinFareFromCity("");
+    setMinFareFromState("");
+    setMinFareToCity("");
+    setMinFareToState("");
+    setMinFareAmount("");
+    setMinFareActive(true);
+  };
+
+  const saveMinimumFare = async () => {
+    try {
+      setSavingMinimumFare(true);
+      setErrorMessage("");
+      const payload = {
+        from_city: minFareFromCity,
+        from_state: minFareFromState,
+        to_city: minFareToCity,
+        to_state: minFareToState,
+        minimum_fare: Number(minFareAmount),
+        is_active: minFareActive,
+      };
+      const url = editingMinimumFareId
+        ? `/api/admin/minimum-fares/${editingMinimumFareId}`
+        : "/api/admin/minimum-fares";
+      const method = editingMinimumFareId ? "PUT" : "POST";
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || result.ok === false) {
+        throw new Error(result.error ?? "Failed to save minimum fare.");
+      }
+      setSuccessMessage(
+        editingMinimumFareId
+          ? "Minimum fare rule updated."
+          : "Minimum fare rule created.",
+      );
+      setShowMinimumFareModal(false);
+      resetMinimumFareForm();
+      setTimeout(() => setSuccessMessage(""), 3000);
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
+      setTimeout(() => setErrorMessage(""), 4000);
+    } finally {
+      setSavingMinimumFare(false);
+    }
+  };
+
+  const toggleMinimumFareActive = async (id: string, nextActive: boolean) => {
+    try {
+      setErrorMessage("");
+      const response = await fetch(`/api/admin/minimum-fares/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || result.ok === false) {
+        throw new Error(result.error ?? "Failed to update status.");
+      }
+      setSuccessMessage(nextActive ? "Rule activated." : "Rule deactivated.");
+      setTimeout(() => setSuccessMessage(""), 3000);
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
+      setTimeout(() => setErrorMessage(""), 4000);
+    }
+  };
+
+  const deleteMinimumFare = async (id: string) => {
+    if (!window.confirm("Delete this minimum fare rule?")) return;
+    try {
+      const response = await fetch(`/api/admin/minimum-fares/${id}`, {
+        method: "DELETE",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || result.ok === false) {
+        throw new Error(result.error ?? "Failed to delete rule.");
+      }
+      setSuccessMessage("Minimum fare rule deleted.");
+      setTimeout(() => setSuccessMessage(""), 3000);
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
+      setTimeout(() => setErrorMessage(""), 4000);
+    }
+  };
+
   const deleteCity = async (id: number) => {
     const confirmDelete = window.confirm(
       "Are you sure you want to delete this city?",
@@ -1242,27 +1565,50 @@ export function DashboardTabs({
               Monitor signup analytics and manually verify document uploads.
             </p>
           </div>
-          <button
-            onClick={logout}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Log out
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={logout}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Log out
+            </button>
+          </div>
         </div>
       </header>
 
       {showRlsHint ? (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Dashboard is using Supabase anon key. With your current RLS policies,
-          admin pages may return no rows. Add
-          <code>SUPABASE_SERVICE_ROLE_KEY</code> in website env for full admin
-          visibility.
+          <p className="font-semibold">Admin cannot bypass RLS</p>
+          <p className="mt-1">
+            Profile Change Requests stay empty until a real{" "}
+            <strong>server-only</strong> service-role/secret key is set for the
+            same Supabase project this Admin Panel is connected to.
+          </p>
+          {serviceRoleIssue ? (
+            <p className="mt-2">
+              Detected issue: <code>{serviceRoleIssue}</code>
+            </p>
+          ) : null}
+          <p className="mt-2">
+            Connected host: <code>{supabaseHost || "unknown"}</code>. In
+            Supabase Dashboard for that project → Settings → API Keys, copy the{" "}
+            <strong>secret</strong> / service_role key into{" "}
+            <code>SUPABASE_SERVICE_ROLE_KEY</code> in <code>.env.local</code>{" "}
+            (not <code>NEXT_PUBLIC_*</code>), then restart Next.js. Do not use
+            the publishable/anon key.
+          </p>
         </div>
       ) : null}
 
-      <div className="mb-6 flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+      {profileChangeRequestsError ? (
+        <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          Failed to load profile change requests: {profileChangeRequestsError}
+        </div>
+      ) : null}
+
+      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "overview"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1272,7 +1618,7 @@ export function DashboardTabs({
           Analytics
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "pending"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1282,7 +1628,7 @@ export function DashboardTabs({
           Pending Verification ({pendingCount})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "rejected-partial"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1292,7 +1638,7 @@ export function DashboardTabs({
           Rejected/Partial ({rejectedPartialCount})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "not-started"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1302,7 +1648,7 @@ export function DashboardTabs({
           Not Started ({notStartedCount})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "winners"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1312,7 +1658,7 @@ export function DashboardTabs({
           Winners ({winnerUser.length})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "cities"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1322,7 +1668,7 @@ export function DashboardTabs({
           Cities ({cities.length || 0})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "sliders"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1332,7 +1678,7 @@ export function DashboardTabs({
           Sliders ({sliders?.length || 0})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "users"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1342,7 +1688,7 @@ export function DashboardTabs({
           Users ({users?.length || 0})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "requirements"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1352,7 +1698,7 @@ export function DashboardTabs({
           Requirements ({requirements?.length || 0})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "exchanges"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1362,7 +1708,7 @@ export function DashboardTabs({
           Exchanges ({exchanges?.length || 0})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "fraud-reports"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1372,7 +1718,7 @@ export function DashboardTabs({
           Fraud Reports ({fraudReports?.length || 0})
         </button>
         <button
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "priority-settings"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1380,6 +1726,36 @@ export function DashboardTabs({
           onClick={() => setActiveTab("priority-settings")}
         >
           Priority Timeline
+        </button>
+        <button
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "profile-changes"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("profile-changes")}
+        >
+          Profile Changes ({pendingProfileChangeCount})
+        </button>
+        <button
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "car-verification"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("car-verification")}
+        >
+          Car Verification ({pendingVehicleCount})
+        </button>
+        <button
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "minimum-fares"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("minimum-fares")}
+        >
+          Set Minimum Fare ({routeMinimumFares.length})
         </button>
       </div>
 
@@ -1826,6 +2202,30 @@ export function DashboardTabs({
                       Plan
                     </th>
                     <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Date of Birth
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Birth Date
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Blood Group
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Reference 1 Name
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Reference 1 Mobile
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Reference 2 Name
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Reference 2 Mobile
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      User Roles
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
                       Created At
                     </th>
                     <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -1877,7 +2277,7 @@ export function DashboardTabs({
                     <tr>
                       <td
                         className="px-4 py-10 text-center text-slate-500"
-                        colSpan={19}
+                        colSpan={27}
                       >
                         No users found.
                       </td>
@@ -1896,13 +2296,13 @@ export function DashboardTabs({
                         }`}
                       >
                         <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-800">
-                          {user.first_name ?? "—"} {user.last_name ?? "—"}
+                          {user.first_name ?? "-"} {user.last_name ?? "-"}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                          {user.phone ?? "—"}
+                          {cellDash(user.phone)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                          {user.email ?? "—"}
+                          {cellDash(user.email)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <div onClick={(e) => e.stopPropagation()}>
@@ -1934,6 +2334,30 @@ export function DashboardTabs({
                               <option value="gold">Gold</option>
                             </select>
                           </div>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatBirthDateCell(user.date_of_birth)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatBirthDateCell(user.birth_date)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cellDash(user.blood_group)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cellDash(user.reference_1_name)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cellDash(user.reference_1_mobile)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cellDash(user.reference_2_name)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cellDash(user.reference_2_mobile)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatUserRolesCell(user.user_roles)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                           {formatDateTime(user.created_at)}
@@ -2116,6 +2540,16 @@ export function DashboardTabs({
         </>
       ) : activeTab === "requirements" ? (
         <>
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={exportRequirements}
+              disabled={exportingRequirements}
+              className="h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {exportingRequirements ? "Exporting..." : "Export to Excel"}
+            </button>
+          </div>
           <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3 overflow-x-auto pb-1">
               <input
@@ -2892,6 +3326,369 @@ export function DashboardTabs({
             {savingPrioritySettings ? "Saving..." : "Save Settings"}
           </button>
         </div>
+      ) : activeTab === "profile-changes" ? (
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-slate-900">
+              Profile Change Requests
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["pending", "Pending"],
+                  ["approved", "Approved"],
+                  ["rejected", "Rejected"],
+                  ["all", "All"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setProfileChangeFilter(value)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                    profileChangeFilter === value
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white text-slate-600 border border-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      User
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Changes
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Requested
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredProfileChangeRequests.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={4}
+                      >
+                        No profile change requests in this filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProfileChangeRequests.map((req) => {
+                      const name =
+                        `${req.users?.first_name ?? ""} ${req.users?.last_name ?? ""}`.trim() ||
+                        req.users?.phone ||
+                        req.user_id;
+                      const changeCount = Array.isArray(req.requested_changes)
+                        ? req.requested_changes.length
+                        : 0;
+                      return (
+                        <tr
+                          key={req.id}
+                          className="cursor-pointer hover:bg-slate-50"
+                          onClick={() =>
+                            router.push(`/dashboard/profile-changes/${req.id}`)
+                          }
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-900">
+                              {name}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {req.users?.phone || "—"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {changeCount} field
+                            {changeCount === 1 ? "" : "s"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {formatDateTime(req.requested_at)}
+                          </td>
+                          <td className="px-4 py-3 capitalize text-slate-700">
+                            {req.status}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : activeTab === "car-verification" ? (
+        <>
+          {vehiclesError ? (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              Failed to load vehicles: {vehiclesError}
+            </div>
+          ) : null}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-slate-900">
+              Car Verification
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["pending", "Pending"],
+                  ["approved", "Approved"],
+                  ["rejected", "Rejected"],
+                  ["all", "All"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setVehicleFilter(value)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                    vehicleFilter === value
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white text-slate-600 border border-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      User
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Registration Number
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Submitted
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredVehicles.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={4}
+                      >
+                        No vehicles in this filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredVehicles.map((vehicle) => {
+                      const name =
+                        `${vehicle.users?.first_name ?? ""} ${vehicle.users?.last_name ?? ""}`.trim() ||
+                        vehicle.users?.phone ||
+                        vehicle.user_id;
+                      return (
+                        <tr
+                          key={vehicle.id}
+                          className="cursor-pointer hover:bg-slate-50"
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/car-verification/${vehicle.id}`,
+                            )
+                          }
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-900">
+                              {name}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {vehicle.users?.phone || "—"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 font-semibold tracking-wide text-slate-800">
+                            {vehicle.registration_number}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {formatDateTime(vehicle.created_at)}
+                          </td>
+                          <td className="px-4 py-3 capitalize text-slate-700">
+                            {vehicle.verification_status}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : activeTab === "minimum-fares" ? (
+        <>
+          {routeMinimumFaresError ? (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              Failed to load minimum fares: {routeMinimumFaresError}
+            </div>
+          ) : null}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Set Minimum Fare
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Directional city+state rules. Rajkot → Ahmedabad is separate
+                from Ahmedabad → Rajkot.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                resetMinimumFareForm();
+                setShowMinimumFareModal(true);
+              }}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Add Rule
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      From City
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      From State
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      To City
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      To State
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Minimum Fare
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Created At
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Updated At
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {routeMinimumFares.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={9}
+                      >
+                        No minimum fare rules yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    routeMinimumFares.map((rule) => (
+                      <tr key={rule.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {rule.from_city}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {rule.from_state}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {rule.to_city}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {rule.to_state}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          ₹{Number(rule.minimum_fare).toLocaleString("en-IN")}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              rule.is_active
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-slate-200 text-slate-600"
+                            }`}
+                          >
+                            {rule.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {formatDateTime(rule.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {formatDateTime(rule.updated_at)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingMinimumFareId(rule.id);
+                                setMinFareFromCity(rule.from_city);
+                                setMinFareFromState(rule.from_state);
+                                setMinFareToCity(rule.to_city);
+                                setMinFareToState(rule.to_state);
+                                setMinFareAmount(String(rule.minimum_fare));
+                                setMinFareActive(rule.is_active);
+                                setShowMinimumFareModal(true);
+                              }}
+                              className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void toggleMinimumFareActive(
+                                  rule.id,
+                                  !rule.is_active,
+                                )
+                              }
+                              className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                            >
+                              {rule.is_active ? "Deactivate" : "Activate"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteMinimumFare(rule.id)}
+                              className="rounded-lg bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       ) : (
         <>
           <div className="mb-4 flex justify-end">
@@ -3446,6 +4243,118 @@ export function DashboardTabs({
                 className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700"
               >
                 {editingCityId ? "Update City" : "Create City"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showMinimumFareModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">
+                {editingMinimumFareId
+                  ? "Edit Minimum Fare"
+                  : "Add Minimum Fare"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMinimumFareModal(false);
+                  resetMinimumFareForm();
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">
+                    From City
+                  </label>
+                  <input
+                    type="text"
+                    value={minFareFromCity}
+                    onChange={(e) => setMinFareFromCity(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">
+                    From State
+                  </label>
+                  <input
+                    type="text"
+                    value={minFareFromState}
+                    onChange={(e) => setMinFareFromState(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">
+                    To City
+                  </label>
+                  <input
+                    type="text"
+                    value={minFareToCity}
+                    onChange={(e) => setMinFareToCity(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">
+                    To State
+                  </label>
+                  <input
+                    type="text"
+                    value={minFareToState}
+                    onChange={(e) => setMinFareToState(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Minimum Fare (₹)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  step="1"
+                  value={minFareAmount}
+                  onChange={(e) => setMinFareAmount(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={minFareActive}
+                  onChange={(e) => setMinFareActive(e.target.checked)}
+                />
+                Active
+              </label>
+              <button
+                type="button"
+                disabled={
+                  savingMinimumFare ||
+                  !minFareFromCity.trim() ||
+                  !minFareFromState.trim() ||
+                  !minFareToCity.trim() ||
+                  !minFareToState.trim() ||
+                  !minFareAmount.trim()
+                }
+                onClick={() => void saveMinimumFare()}
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {savingMinimumFare
+                  ? "Saving…"
+                  : editingMinimumFareId
+                    ? "Update Rule"
+                    : "Create Rule"}
               </button>
             </div>
           </div>
