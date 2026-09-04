@@ -41,5 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 # Google Cloud TTS credentials (never commit)
-# google-tts.json
+google-tts.json
 google-tts_old.json
