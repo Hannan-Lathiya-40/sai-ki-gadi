@@ -215,9 +215,13 @@ type FraudReport = {
   } | null;
 };
 
+/** Legacy column names mapped in UI as Diamond / Gold / Silver. */
 type PrioritySettings = {
+  /** Silver Priority Duration */
   matching_platinum_minutes: number;
+  /** Diamond Priority Duration */
   all_platinum_minutes: number;
+  /** Gold Priority Duration */
   all_gold_minutes: number;
   updated_at?: string | null;
 };
@@ -486,14 +490,17 @@ export function DashboardTabs({
     setSliderList(sliders);
   }, [sliders]);
 
-  const [matchingPlatinumMinutes, setMatchingPlatinumMinutes] = useState(
-    String(prioritySettings?.matching_platinum_minutes ?? 4),
-  );
-  const [allPlatinumMinutes, setAllPlatinumMinutes] = useState(
+  // UI labels: Diamond / Gold / Silver — DB columns stay legacy names.
+  // all_platinum_minutes → Diamond, all_gold_minutes → Gold,
+  // matching_platinum_minutes → Silver
+  const [diamondMinutes, setDiamondMinutes] = useState(
     String(prioritySettings?.all_platinum_minutes ?? 4),
   );
-  const [allGoldMinutes, setAllGoldMinutes] = useState(
+  const [goldMinutes, setGoldMinutes] = useState(
     String(prioritySettings?.all_gold_minutes ?? 3),
+  );
+  const [silverMinutes, setSilverMinutes] = useState(
+    String(prioritySettings?.matching_platinum_minutes ?? 4),
   );
   const [savingPrioritySettings, setSavingPrioritySettings] = useState(false);
   const [prioritySettingsMessage, setPrioritySettingsMessage] = useState<
@@ -501,20 +508,26 @@ export function DashboardTabs({
   >(null);
 
   useEffect(() => {
-    setMatchingPlatinumMinutes(
+    setDiamondMinutes(String(prioritySettings?.all_platinum_minutes ?? 4));
+    setGoldMinutes(String(prioritySettings?.all_gold_minutes ?? 3));
+    setSilverMinutes(
       String(prioritySettings?.matching_platinum_minutes ?? 4),
     );
-    setAllPlatinumMinutes(String(prioritySettings?.all_platinum_minutes ?? 4));
-    setAllGoldMinutes(String(prioritySettings?.all_gold_minutes ?? 3));
   }, [prioritySettings]);
 
+  const diamondPreview = Number(diamondMinutes) || 0;
+  const goldPreview = Number(goldMinutes) || 0;
+  const silverPreview = Number(silverMinutes) || 0;
+  const everyoneAfterMinutes =
+    diamondPreview + goldPreview + silverPreview;
+
   async function savePrioritySettings() {
-    const matching = Number(matchingPlatinumMinutes);
-    const platinum = Number(allPlatinumMinutes);
-    const gold = Number(allGoldMinutes);
+    const diamond = Number(diamondMinutes);
+    const gold = Number(goldMinutes);
+    const silver = Number(silverMinutes);
 
     if (
-      ![matching, platinum, gold].every(
+      ![diamond, gold, silver].every(
         (n) => Number.isInteger(n) && n > 0 && n <= 1440,
       )
     ) {
@@ -532,9 +545,10 @@ export function DashboardTabs({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          matching_platinum_minutes: matching,
-          all_platinum_minutes: platinum,
+          // Legacy column names — semantics: Diamond / Gold / Silver
+          all_platinum_minutes: diamond,
           all_gold_minutes: gold,
+          matching_platinum_minutes: silver,
         }),
       });
       const payload = await response.json();
@@ -542,15 +556,15 @@ export function DashboardTabs({
         setPrioritySettingsMessage(payload?.error ?? "Failed to save settings.");
         return;
       }
-      setMatchingPlatinumMinutes(String(payload.matching_platinum_minutes));
-      setAllPlatinumMinutes(String(payload.all_platinum_minutes));
-      setAllGoldMinutes(String(payload.all_gold_minutes));
+      setDiamondMinutes(String(payload.all_platinum_minutes));
+      setGoldMinutes(String(payload.all_gold_minutes));
+      setSilverMinutes(String(payload.matching_platinum_minutes));
+      const total =
+        payload.all_platinum_minutes +
+        payload.all_gold_minutes +
+        payload.matching_platinum_minutes;
       setPrioritySettingsMessage(
-        `Saved. Timeline: ${payload.matching_platinum_minutes} + ${payload.all_platinum_minutes} + ${payload.all_gold_minutes} = ${
-          payload.matching_platinum_minutes +
-          payload.all_platinum_minutes +
-          payload.all_gold_minutes
-        } minutes to open access.`,
+        `Saved. Timeline: Diamond ${payload.all_platinum_minutes} + Gold ${payload.all_gold_minutes} + Silver ${payload.matching_platinum_minutes} = ${total} minutes to open access.`,
       );
     } catch {
       setPrioritySettingsMessage("Failed to save settings.");
@@ -3227,41 +3241,26 @@ export function DashboardTabs({
             Priority Timeline Settings
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Durations control Requirement feed access windows. Changes apply on
-            the next feed load — no app deploy required.
+            Durations control Requirement feed access windows in this order:
+            Diamond → Gold → Silver → Everyone. Changes apply on the next feed
+            load — no app deploy required.
           </p>
 
           <div className="mt-6 grid gap-5 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">
-                Cab Matching + Platinum Priority Duration
+                Diamond Priority Duration
               </label>
+              <p className="mb-2 text-xs text-slate-500">
+                Gold membership purchased and trip_points &gt; 0
+              </p>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={1}
                   max={1440}
-                  value={matchingPlatinumMinutes}
-                  onChange={(e) => setMatchingPlatinumMinutes(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
-                />
-                <span className="text-sm font-medium text-slate-500">
-                  Minutes
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-700">
-                Platinum Priority Duration
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={1440}
-                  value={allPlatinumMinutes}
-                  onChange={(e) => setAllPlatinumMinutes(e.target.value)}
+                  value={diamondMinutes}
+                  onChange={(e) => setDiamondMinutes(e.target.value)}
                   className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
                 />
                 <span className="text-sm font-medium text-slate-500">
@@ -3274,13 +3273,38 @@ export function DashboardTabs({
               <label className="mb-1 block text-sm font-semibold text-slate-700">
                 Gold Priority Duration
               </label>
+              <p className="mb-2 text-xs text-slate-500">
+                Gold membership purchased (trip_points not required)
+              </p>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={1}
                   max={1440}
-                  value={allGoldMinutes}
-                  onChange={(e) => setAllGoldMinutes(e.target.value)}
+                  value={goldMinutes}
+                  onChange={(e) => setGoldMinutes(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-500">
+                  Minutes
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">
+                Silver Priority Duration
+              </label>
+              <p className="mb-2 text-xs text-slate-500">
+                trip_points &gt; 0 (Gold membership not required)
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={silverMinutes}
+                  onChange={(e) => setSilverMinutes(e.target.value)}
                   className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500"
                 />
                 <span className="text-sm font-medium text-slate-500">
@@ -3294,19 +3318,16 @@ export function DashboardTabs({
             <p className="font-semibold text-slate-900">Preview timeline</p>
             <ol className="mt-2 list-decimal space-y-1 pl-5">
               <li>
-                0–{Number(matchingPlatinumMinutes) || 0} min → matching_platinum
-                (Platinum + matching cab)
+                0–{diamondPreview} min → Diamond
               </li>
               <li>
-                Next {Number(allPlatinumMinutes) || 0} min → all_platinum
+                Next {goldPreview} min → Gold
               </li>
-              <li>Next {Number(allGoldMinutes) || 0} min → all_gold</li>
               <li>
-                After{" "}
-                {(Number(matchingPlatinumMinutes) || 0) +
-                  (Number(allPlatinumMinutes) || 0) +
-                  (Number(allGoldMinutes) || 0)}{" "}
-                min → everyone
+                Next {silverPreview} min → Silver
+              </li>
+              <li>
+                After {everyoneAfterMinutes} min → Everyone
               </li>
             </ol>
           </div>
