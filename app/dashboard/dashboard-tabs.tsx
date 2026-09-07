@@ -8,6 +8,7 @@ import { exportToExcel } from "@/lib/export-excel";
 import { formatDateTime } from "@/lib/format-datetime";
 
 import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
+import { InAppAnnouncementsAdminPanel } from "./components/in-app-announcements-admin-panel";
 
 type MembershipCounts = {
   regular: number;
@@ -325,7 +326,8 @@ type TabKey =
   | "profile-changes"
   | "car-verification"
   | "minimum-fares"
-  | "about-us";
+  | "about-us"
+  | "in-app-popups";
 
 type BirthdaySortKey = "dob_oldest" | "dob_newest";
 type BirthdayPresetFilter = "all" | "today" | "this_month" | "not_set";
@@ -1083,7 +1085,25 @@ export function DashboardTabs({
       });
 
       if (!response.ok) {
-        throw new Error("Failed");
+        const errorText = await response.text();
+        console.error("Create Winner API Error:", {
+          status: response.status,
+          response: errorText,
+        });
+
+        let message = `Create winner failed (${response.status})`;
+        try {
+          const parsed = JSON.parse(errorText) as {
+            error?: string;
+            message?: string;
+          };
+          message = parsed.error || parsed.message || message;
+        } catch {
+          if (errorText.trim()) message = errorText;
+        }
+
+        window.alert(message);
+        throw new Error(message);
       }
 
       setShowWinnerModal(false);
@@ -1962,6 +1982,16 @@ export function DashboardTabs({
           onClick={() => setActiveTab("about-us")}
         >
           About Us
+        </button>
+        <button
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "in-app-popups"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("in-app-popups")}
+        >
+          In-App Pop-ups
         </button>
       </div>
 
@@ -4162,6 +4192,8 @@ export function DashboardTabs({
         </>
       ) : activeTab === "about-us" ? (
         <AboutUsAdminPanel />
+      ) : activeTab === "in-app-popups" ? (
+        <InAppAnnouncementsAdminPanel />
       ) : (
         <>
           <div className="mb-4 flex justify-end">

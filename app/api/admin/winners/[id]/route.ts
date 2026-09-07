@@ -6,6 +6,31 @@ function normalizeMediaType(value: unknown): "image" | "video" {
   return value === "video" ? "video" : "image";
 }
 
+function isMissingMediaTypeColumn(error: {
+  code?: string;
+  message?: string;
+} | null): boolean {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const message = (error.message ?? "").toLowerCase();
+  return (
+    message.includes("media_type") &&
+    (message.includes("does not exist") || message.includes("could not find"))
+  );
+}
+
+function safeDbErrorMessage(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return "Failed to update winner";
+}
+
 export async function PUT(
   request: Request,
   context: {
@@ -30,31 +55,86 @@ export async function PUT(
     }
 
     const { id } = await context.params;
+    const mediaType = normalizeMediaType(body.media_type);
+    const payload = {
+      user_id: body.user_id,
+      date: body.date,
+      slot: body.slot ?? "",
+      image: body.image.trim(),
+      media_type: mediaType,
+    };
 
     const { error } = await supabaseAdmin
       .from("winners")
-      .update({
-        user_id: body.user_id,
-        date: body.date,
-        slot: body.slot,
-        image: body.image.trim(),
-        media_type: normalizeMediaType(body.media_type),
-      })
+      .update(payload)
       .eq("id", id);
 
-    if (error) {
-      throw error;
+    if (!error) {
+      return NextResponse.json({
+        success: true,
+      });
     }
 
-    return NextResponse.json({
-      success: true,
-    });
-  } catch (error) {
-    console.error(error);
+    if (isMissingMediaTypeColumn(error)) {
+      if (mediaType === "video") {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Winner video requires the winners.media_type column. Apply migration 043_winners_media_type.sql, then retry.",
+            code: "MISSING_MEDIA_TYPE_COLUMN",
+          },
+          {
+            status: 503,
+          },
+        );
+      }
+
+      const { error: fallbackError } = await supabaseAdmin
+        .from("winners")
+        .update({
+          user_id: payload.user_id,
+          date: payload.date,
+          slot: payload.slot,
+          image: payload.image,
+        })
+        .eq("id", id);
+
+      if (fallbackError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: safeDbErrorMessage(fallbackError),
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        warning:
+          "Updated as image without media_type (column missing). Apply migration 043_winners_media_type.sql for video support.",
+      });
+    }
 
     return NextResponse.json(
       {
         success: false,
+        error: safeDbErrorMessage(error),
+      },
+      {
+        status: 500,
+      },
+    );
+  } catch (error) {
+    console.error("Update winner failed:", safeDbErrorMessage(error));
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to update winner",
       },
       {
         status: 500,
@@ -77,18 +157,27 @@ export async function DELETE(
     const { error } = await supabaseAdmin.from("winners").delete().eq("id", id);
 
     if (error) {
-      throw error;
+      return NextResponse.json(
+        {
+          success: false,
+          error: safeDbErrorMessage(error),
+        },
+        {
+          status: 500,
+        },
+      );
     }
 
     return NextResponse.json({
       success: true,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Delete winner failed:", safeDbErrorMessage(error));
 
     return NextResponse.json(
       {
         success: false,
+        error: "Failed to delete winner",
       },
       {
         status: 500,

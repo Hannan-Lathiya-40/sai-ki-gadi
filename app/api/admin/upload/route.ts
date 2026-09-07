@@ -82,10 +82,24 @@ export async function POST(request: Request) {
       .from("winner-images")
       .upload(fileName, buffer, {
         contentType: file.type,
+        upsert: false,
       });
 
     if (error) {
-      throw error;
+      console.error("Admin upload storage error:", {
+        bucket: "winner-images",
+        mediaKind,
+        contentType: file.type,
+        message: error.message,
+      });
+      return NextResponse.json(
+        {
+          error: error.message || "Upload failed",
+        },
+        {
+          status: 500,
+        },
+      );
     }
 
     const {
@@ -100,9 +114,17 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
+    const message =
+      error &&
+      typeof error === "object" &&
+      "message" in error &&
+      typeof (error as { message: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : "Upload failed";
+
     return NextResponse.json(
       {
-        error: "Upload failed",
+        error: message,
       },
       {
         status: 500,
