@@ -1,11 +1,13 @@
 "use client";
 
+import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useEffect } from "react";
-import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { useEffect, useMemo, useState } from "react";
 
 import { exportToExcel } from "@/lib/export-excel";
 import { formatDateTime } from "@/lib/format-datetime";
+
+import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
 
 type MembershipCounts = {
   regular: number;
@@ -21,12 +23,15 @@ type PendingVerificationUser = {
   membershipType: "regular" | "silver" | "gold" | "platinum";
 };
 
+type WinnerMediaType = "image" | "video";
+
 type WinnersUser = {
   id: string;
   user_id: string;
   date: string;
   slot: string;
   image: string | null;
+  media_type?: WinnerMediaType | null;
   created_at: string;
   users: {
     first_name: string;
@@ -177,12 +182,15 @@ type Exchange = {
   } | null;
 };
 
+type SliderMediaType = "image" | "video";
+
 type Slider = {
   id: string;
   image: string;
   status: boolean;
   display_order: number;
   created_at: string;
+  media_type?: SliderMediaType | null;
 };
 
 type city = {
@@ -309,14 +317,44 @@ type TabKey =
   | "cities"
   | "sliders"
   | "users"
+  | "birthday-date"
   | "requirements"
   | "exchanges"
   | "fraud-reports"
   | "priority-settings"
   | "profile-changes"
   | "car-verification"
-  | "minimum-fares";
+  | "minimum-fares"
+  | "about-us";
 
+type BirthdaySortKey = "dob_oldest" | "dob_newest";
+type BirthdayPresetFilter = "all" | "today" | "this_month" | "not_set";
+
+const BIRTHDAY_PAGE_SIZE = 50;
+
+/** Parse signup DOB (`users.birth_date`) as a local calendar date for sorting/filters. */
+function parseBirthDateValue(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const iso = String(value).trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (match) {
+    return new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+    );
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function toDateInputValue(date: Date): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 function formatMembership(value: PendingVerificationUser["membershipType"]) {
   switch (value) {
@@ -405,6 +443,15 @@ export function DashboardTabs({
 
   const [userToDate, setUserToDate] = useState("");
   const [userSort, setUserSort] = useState<UserSortKey>("created_newest");
+  const [birthdaySearch, setBirthdaySearch] = useState("");
+  const [birthdayExactDate, setBirthdayExactDate] = useState("");
+  const [birthdayFromDate, setBirthdayFromDate] = useState("");
+  const [birthdayToDate, setBirthdayToDate] = useState("");
+  const [birthdayPreset, setBirthdayPreset] =
+    useState<BirthdayPresetFilter>("all");
+  const [birthdaySort, setBirthdaySort] =
+    useState<BirthdaySortKey>("dob_oldest");
+  const [birthdayPage, setBirthdayPage] = useState(1);
   const [remarksDrafts, setRemarksDrafts] = useState<Record<string, string>>(
     {},
   );
@@ -435,6 +482,9 @@ export function DashboardTabs({
   const [winnerSlot, setWinnerSlot] = useState("");
 
   const [winnerImage, setWinnerImage] = useState("");
+
+  const [winnerMediaType, setWinnerMediaType] =
+    useState<WinnerMediaType>("image");
 
   const [savingWinner, setSavingWinner] = useState(false);
 
@@ -476,6 +526,9 @@ export function DashboardTabs({
 
   const [sliderImage, setSliderImage] = useState("");
 
+  const [sliderMediaType, setSliderMediaType] =
+    useState<SliderMediaType>("image");
+
   const [sliderStatus, setSliderStatus] = useState(true);
 
   const [sliderOrder, setSliderOrder] = useState(0);
@@ -510,16 +563,13 @@ export function DashboardTabs({
   useEffect(() => {
     setDiamondMinutes(String(prioritySettings?.all_platinum_minutes ?? 4));
     setGoldMinutes(String(prioritySettings?.all_gold_minutes ?? 3));
-    setSilverMinutes(
-      String(prioritySettings?.matching_platinum_minutes ?? 4),
-    );
+    setSilverMinutes(String(prioritySettings?.matching_platinum_minutes ?? 4));
   }, [prioritySettings]);
 
   const diamondPreview = Number(diamondMinutes) || 0;
   const goldPreview = Number(goldMinutes) || 0;
   const silverPreview = Number(silverMinutes) || 0;
-  const everyoneAfterMinutes =
-    diamondPreview + goldPreview + silverPreview;
+  const everyoneAfterMinutes = diamondPreview + goldPreview + silverPreview;
 
   async function savePrioritySettings() {
     const diamond = Number(diamondMinutes);
@@ -553,7 +603,9 @@ export function DashboardTabs({
       });
       const payload = await response.json();
       if (!response.ok) {
-        setPrioritySettingsMessage(payload?.error ?? "Failed to save settings.");
+        setPrioritySettingsMessage(
+          payload?.error ?? "Failed to save settings.",
+        );
         return;
       }
       setDiamondMinutes(String(payload.all_platinum_minutes));
@@ -812,6 +864,123 @@ export function DashboardTabs({
     userSort,
   ]);
 
+  const filteredBirthdayUsers = useMemo(() => {
+    const search = birthdaySearch.trim().toLowerCase();
+    const today = new Date();
+    const todayMonth = today.getMonth() + 1;
+    const todayDay = today.getDate();
+    const thisMonth = todayMonth;
+
+    const exact = birthdayExactDate
+      ? parseBirthDateValue(birthdayExactDate)
+      : null;
+    const from = birthdayFromDate
+      ? parseBirthDateValue(birthdayFromDate)
+      : null;
+    const to = birthdayToDate ? parseBirthDateValue(birthdayToDate) : null;
+
+    const filtered = users.filter((user) => {
+      const fullName =
+        `${user.first_name ?? ""} ${user.last_name ?? ""}`.toLowerCase();
+      const matchesSearch =
+        !search ||
+        fullName.includes(search) ||
+        (user.phone ?? "").toLowerCase().includes(search) ||
+        (user.email ?? "").toLowerCase().includes(search);
+
+      if (!matchesSearch) return false;
+
+      const dob = parseBirthDateValue(user.birth_date);
+
+      if (birthdayPreset === "not_set") {
+        return dob == null;
+      }
+
+      // Date-based filters require a DOB value
+      const needsDob =
+        birthdayPreset === "today" ||
+        birthdayPreset === "this_month" ||
+        Boolean(exact) ||
+        Boolean(from) ||
+        Boolean(to);
+
+      if (dob == null) {
+        return !needsDob;
+      }
+
+      if (birthdayPreset === "today") {
+        if (dob.getMonth() + 1 !== todayMonth || dob.getDate() !== todayDay) {
+          return false;
+        }
+      }
+
+      if (birthdayPreset === "this_month") {
+        if (dob.getMonth() + 1 !== thisMonth) return false;
+      }
+
+      if (exact) {
+        if (
+          dob.getFullYear() !== exact.getFullYear() ||
+          dob.getMonth() !== exact.getMonth() ||
+          dob.getDate() !== exact.getDate()
+        ) {
+          return false;
+        }
+      }
+
+      if (from && dob < from) return false;
+      if (to && dob > to) return false;
+
+      return true;
+    });
+
+    const dobTime = (value: string | null | undefined) => {
+      const parsed = parseBirthDateValue(value);
+      return parsed ? parsed.getTime() : null;
+    };
+
+    return [...filtered].sort((a, b) => {
+      const aTime = dobTime(a.birth_date);
+      const bTime = dobTime(b.birth_date);
+
+      // Missing DOB last for both sort directions
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+
+      return birthdaySort === "dob_oldest" ? aTime - bTime : bTime - aTime;
+    });
+  }, [
+    users,
+    birthdaySearch,
+    birthdayExactDate,
+    birthdayFromDate,
+    birthdayToDate,
+    birthdayPreset,
+    birthdaySort,
+  ]);
+
+  const birthdayTotalPages = Math.max(
+    1,
+    Math.ceil(filteredBirthdayUsers.length / BIRTHDAY_PAGE_SIZE),
+  );
+  const birthdayPageSafe = Math.min(birthdayPage, birthdayTotalPages);
+  const paginatedBirthdayUsers = useMemo(() => {
+    const start = (birthdayPageSafe - 1) * BIRTHDAY_PAGE_SIZE;
+    return filteredBirthdayUsers.slice(start, start + BIRTHDAY_PAGE_SIZE);
+  }, [filteredBirthdayUsers, birthdayPageSafe]);
+
+  useEffect(() => {
+    setBirthdayPage(1);
+  }, [
+    birthdaySearch,
+    birthdayExactDate,
+    birthdayFromDate,
+    birthdayToDate,
+    birthdayPreset,
+    birthdaySort,
+  ]);
+
   const overviewCards = useMemo(
     () => [
       {
@@ -909,6 +1078,7 @@ export function DashboardTabs({
           date: winnerDate,
           slot: winnerSlot,
           image: winnerImage,
+          media_type: winnerMediaType,
         }),
       });
 
@@ -922,6 +1092,7 @@ export function DashboardTabs({
       setWinnerDate("");
       setWinnerSlot("");
       setWinnerImage("");
+      setWinnerMediaType("image");
       setEditingWinnerId(null);
 
       router.refresh();
@@ -971,6 +1142,7 @@ export function DashboardTabs({
           image: sliderImage,
           status: sliderStatus,
           display_order: sliderOrder,
+          media_type: sliderMediaType,
         }),
       });
 
@@ -981,6 +1153,8 @@ export function DashboardTabs({
       setShowSliderModal(false);
 
       setSliderImage("");
+
+      setSliderMediaType("image");
 
       setSliderStatus(true);
 
@@ -1174,8 +1348,7 @@ export function DashboardTabs({
         "Total Cab Available Listings": user.availability_count ?? 0,
         "Total Driver Listings": user.driver_requirement_count ?? 0,
         "Total Posts": user.total_posts ?? 0,
-        Rating:
-          user.rating_average != null ? Number(user.rating_average) : "-",
+        Rating: user.rating_average != null ? Number(user.rating_average) : "-",
       })),
     });
   };
@@ -1224,9 +1397,10 @@ export function DashboardTabs({
           Destination: cellDash(destination),
           "Car Type": cellDash(item.car_type),
           "Trip Type": cellDash(item.trip_type),
-          Fare: item.price != null && String(item.price).trim() !== ""
-            ? item.price
-            : "-",
+          Fare:
+            item.price != null && String(item.price).trim() !== ""
+              ? item.price
+              : "-",
           "Journey Start": item.journey_start_at
             ? formatDateTime(item.journey_start_at)
             : "-",
@@ -1235,9 +1409,7 @@ export function DashboardTabs({
           "Driver Phone": cellDash(item.assigned_user?.phone),
           "Booking Remark": cellDash(item.booking_remark),
           "Ride Type": cellDash(item.ride_type),
-          "Created At": item.created_at
-            ? formatDateTime(item.created_at)
-            : "-",
+          "Created At": item.created_at ? formatDateTime(item.created_at) : "-",
         };
       });
 
@@ -1703,6 +1875,16 @@ export function DashboardTabs({
         </button>
         <button
           className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "birthday-date"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("birthday-date")}
+        >
+          Birthday Date
+        </button>
+        <button
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "requirements"
               ? "bg-indigo-600 text-white"
               : "text-slate-600 hover:bg-slate-100"
@@ -1770,6 +1952,16 @@ export function DashboardTabs({
           onClick={() => setActiveTab("minimum-fares")}
         >
           Set Minimum Fare ({routeMinimumFares.length})
+        </button>
+        <button
+          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "about-us"
+              ? "bg-indigo-600 text-white"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+          onClick={() => setActiveTab("about-us")}
+        >
+          About Us
         </button>
       </div>
 
@@ -2419,9 +2611,7 @@ export function DashboardTabs({
                           <input
                             type="text"
                             value={
-                              remarksDrafts[user.id] ??
-                              user.admin_remarks ??
-                              ""
+                              remarksDrafts[user.id] ?? user.admin_remarks ?? ""
                             }
                             disabled={updatingUserId === user.id}
                             onChange={(e) =>
@@ -2551,6 +2741,239 @@ export function DashboardTabs({
               </table>
             </div>
           </div>
+        </>
+      ) : activeTab === "birthday-date" ? (
+        <>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-slate-900">Birthday Date</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Search and filter users by signup Date of Birth (
+              <code className="text-xs">birth_date</code>).
+            </p>
+          </div>
+
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={birthdaySearch}
+                onChange={(e) => setBirthdaySearch(e.target.value)}
+                className="h-11 w-72 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 placeholder:text-slate-400"
+              />
+
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <span className="whitespace-nowrap">Specific date</span>
+                <input
+                  type="date"
+                  value={birthdayExactDate}
+                  onChange={(e) => setBirthdayExactDate(e.target.value)}
+                  className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <span className="whitespace-nowrap">From</span>
+                <input
+                  type="date"
+                  value={birthdayFromDate}
+                  onChange={(e) => setBirthdayFromDate(e.target.value)}
+                  className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <span className="whitespace-nowrap">To</span>
+                <input
+                  type="date"
+                  value={birthdayToDate}
+                  onChange={(e) => setBirthdayToDate(e.target.value)}
+                  className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+                />
+              </label>
+
+              <select
+                value={birthdayPreset}
+                onChange={(e) =>
+                  setBirthdayPreset(e.target.value as BirthdayPresetFilter)
+                }
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              >
+                <option value="all">All</option>
+                <option value="today">Today&apos;s Birthday</option>
+                <option value="this_month">This Month</option>
+                <option value="not_set">Date of Birth Not Set</option>
+              </select>
+
+              <select
+                value={birthdaySort}
+                onChange={(e) =>
+                  setBirthdaySort(e.target.value as BirthdaySortKey)
+                }
+                className="h-11 rounded-lg border border-slate-300 px-4 text-slate-900"
+              >
+                <option value="dob_oldest">DOB: Oldest → Newest</option>
+                <option value="dob_newest">DOB: Newest → Oldest</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setBirthdaySearch("");
+                  setBirthdayExactDate("");
+                  setBirthdayFromDate("");
+                  setBirthdayToDate("");
+                  setBirthdayPreset("all");
+                  setBirthdaySort("dob_oldest");
+                  setBirthdayPage(1);
+                }}
+                className="h-11 whitespace-nowrap rounded-lg bg-red-500 px-4 text-white"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-3 text-sm text-slate-600">
+            Showing {paginatedBirthdayUsers.length} of{" "}
+            {filteredBirthdayUsers.length} users
+            {birthdayPreset === "today"
+              ? ` · Today (${toDateInputValue(new Date())})`
+              : ""}
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Name
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Email
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Phone
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Date of Birth
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Plan
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Verification
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedBirthdayUsers.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-4 py-10 text-center text-slate-500"
+                        colSpan={7}
+                      >
+                        No users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedBirthdayUsers.map((user) => (
+                      <tr
+                        key={user.id}
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/users/${user.id}?tab=birthday-date`,
+                          )
+                        }
+                        className="cursor-pointer transition-all hover:bg-slate-50"
+                      >
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-800">
+                          {`${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() ||
+                            "-"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                          {cellDash(user.email)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                          {cellDash(user.phone)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatBirthDateCell(user.birth_date)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {formatMembership(
+                            user.membership_type === "gold" ||
+                              user.membership_type === "silver" ||
+                              user.membership_type === "platinum"
+                              ? user.membership_type
+                              : "regular",
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              user.verified
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {user.verified ? "Verified" : "Pending"}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              user.status
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {user.status ? "ON" : "OFF"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {filteredBirthdayUsers.length > BIRTHDAY_PAGE_SIZE ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                Page {birthdayPageSafe} of {birthdayTotalPages}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={birthdayPageSafe <= 1}
+                  onClick={() =>
+                    setBirthdayPage((page) => Math.max(1, page - 1))
+                  }
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={birthdayPageSafe >= birthdayTotalPages}
+                  onClick={() =>
+                    setBirthdayPage((page) =>
+                      Math.min(birthdayTotalPages, page + 1),
+                    )
+                  }
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
         </>
       ) : activeTab === "requirements" ? (
         <>
@@ -3110,6 +3533,8 @@ export function DashboardTabs({
 
                 setSliderImage("");
 
+                setSliderMediaType("image");
+
                 setSliderStatus(true);
 
                 setShowSliderModal(true);
@@ -3126,7 +3551,11 @@ export function DashboardTabs({
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                      Image
+                      Media
+                    </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Type
                     </th>
 
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -3155,7 +3584,7 @@ export function DashboardTabs({
                           <tr>
                             <td
                               className="px-4 py-10 text-center text-slate-500"
-                              colSpan={3}
+                              colSpan={5}
                             >
                               No sliders found.
                             </td>
@@ -3175,11 +3604,35 @@ export function DashboardTabs({
                                   className="hover:bg-slate-50 cursor-grab"
                                 >
                                   <td className="px-4 py-3">
-                                    <img
-                                      src={slider.image}
-                                      alt="slider"
-                                      className="aspect-[10/5] w-40 rounded-xl object-cover"
-                                    />
+                                    {slider.media_type === "video" ? (
+                                      <video
+                                        src={slider.image}
+                                        className="aspect-[10/5] w-40 rounded-xl object-cover"
+                                        muted
+                                        playsInline
+                                        preload="metadata"
+                                      />
+                                    ) : (
+                                      <img
+                                        src={slider.image}
+                                        alt="slider"
+                                        className="aspect-[10/5] w-40 rounded-xl object-cover"
+                                      />
+                                    )}
+                                  </td>
+
+                                  <td className="px-4 py-3">
+                                    <span
+                                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                        slider.media_type === "video"
+                                          ? "bg-violet-100 text-violet-700"
+                                          : "bg-sky-100 text-sky-700"
+                                      }`}
+                                    >
+                                      {slider.media_type === "video"
+                                        ? "Video"
+                                        : "Image"}
+                                    </span>
                                   </td>
 
                                   <td className="px-4 py-3">
@@ -3204,6 +3657,11 @@ export function DashboardTabs({
                                         onClick={() => {
                                           setEditingSliderId(slider.id);
                                           setSliderImage(slider.image);
+                                          setSliderMediaType(
+                                            slider.media_type === "video"
+                                              ? "video"
+                                              : "image",
+                                          );
                                           setSliderStatus(slider.status);
                                           setSliderOrder(slider.display_order);
                                           setShowSliderModal(true);
@@ -3317,18 +3775,10 @@ export function DashboardTabs({
           <div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Preview timeline</p>
             <ol className="mt-2 list-decimal space-y-1 pl-5">
-              <li>
-                0–{diamondPreview} min → Diamond
-              </li>
-              <li>
-                Next {goldPreview} min → Gold
-              </li>
-              <li>
-                Next {silverPreview} min → Silver
-              </li>
-              <li>
-                After {everyoneAfterMinutes} min → Everyone
-              </li>
+              <li>0–{diamondPreview} min → Diamond</li>
+              <li>Next {goldPreview} min → Gold</li>
+              <li>Next {silverPreview} min → Silver</li>
+              <li>After {everyoneAfterMinutes} min → Everyone</li>
             </ol>
           </div>
 
@@ -3710,6 +4160,8 @@ export function DashboardTabs({
             </div>
           </div>
         </>
+      ) : activeTab === "about-us" ? (
+        <AboutUsAdminPanel />
       ) : (
         <>
           <div className="mb-4 flex justify-end">
@@ -3721,6 +4173,7 @@ export function DashboardTabs({
                 setWinnerDate("");
                 setWinnerSlot("");
                 setWinnerImage("");
+                setWinnerMediaType("image");
 
                 setShowWinnerModal(true);
               }}
@@ -3751,8 +4204,13 @@ export function DashboardTabs({
                     </th>
 
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                      Image
+                      Media
                     </th>
+
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Type
+                    </th>
+
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
                       Actions
                     </th>
@@ -3764,7 +4222,7 @@ export function DashboardTabs({
                     <tr>
                       <td
                         className="px-4 py-10 text-center text-slate-500"
-                        colSpan={5}
+                        colSpan={7}
                       >
                         No winners found.
                       </td>
@@ -3792,15 +4250,38 @@ export function DashboardTabs({
 
                         <td className="px-4 py-3">
                           {winner.image ? (
-                            <img
-                              src={winner.image}
-                              alt="winner"
-                              className="aspect-[10/7] w-28 rounded-xl object-cover"
-                            />
+                            winner.media_type === "video" ? (
+                              <video
+                                src={winner.image}
+                                className="aspect-[10/7] w-28 rounded-xl object-cover"
+                                muted
+                                playsInline
+                                preload="metadata"
+                              />
+                            ) : (
+                              <img
+                                src={winner.image}
+                                alt="winner"
+                                className="aspect-[10/7] w-28 rounded-xl object-cover"
+                              />
+                            )
                           ) : (
-                            <span className="text-slate-400">No Image</span>
+                            <span className="text-slate-400">No Media</span>
                           )}
                         </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              winner.media_type === "video"
+                                ? "bg-violet-100 text-violet-700"
+                                : "bg-sky-100 text-sky-700"
+                            }`}
+                          >
+                            {winner.media_type === "video" ? "Video" : "Image"}
+                          </span>
+                        </td>
+
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <button
@@ -3814,6 +4295,11 @@ export function DashboardTabs({
                                 setWinnerSlot(winner.slot);
 
                                 setWinnerImage(winner.image ?? "");
+                                setWinnerMediaType(
+                                  winner.media_type === "video"
+                                    ? "video"
+                                    : "image",
+                                );
 
                                 setShowWinnerModal(true);
                               }}
@@ -3932,6 +4418,7 @@ export function DashboardTabs({
                   setWinnerDate("");
                   setWinnerSlot("");
                   setWinnerImage("");
+                  setWinnerMediaType("image");
                 }}
                 className="text-slate-500 hover:text-slate-700"
               >
@@ -3940,6 +4427,48 @@ export function DashboardTabs({
             </div>
 
             <div className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Media Type
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWinnerMediaType("image");
+                      if (!editingWinnerId) {
+                        setWinnerImage("");
+                      }
+                    }}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                      winnerMediaType === "image"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Image
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWinnerMediaType("video");
+                      if (!editingWinnerId) {
+                        setWinnerImage("");
+                      }
+                    }}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                      winnerMediaType === "video"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Video
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Select User
@@ -4005,12 +4534,18 @@ export function DashboardTabs({
                 </div> */}
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Upload Image
+                  {winnerMediaType === "video"
+                    ? "Upload Video"
+                    : "Upload Image"}
                 </label>
 
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={
+                    winnerMediaType === "video"
+                      ? "video/mp4,video/quicktime,video/webm"
+                      : "image/*"
+                  }
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
 
@@ -4022,6 +4557,7 @@ export function DashboardTabs({
                       const formData = new FormData();
 
                       formData.append("file", file);
+                      formData.append("mediaKind", winnerMediaType);
 
                       const response = await fetch("/api/admin/upload", {
                         method: "POST",
@@ -4030,25 +4566,39 @@ export function DashboardTabs({
 
                       const data = await response.json();
 
-                      console.log("UPLOAD RESPONSE", data);
+                      if (!response.ok) {
+                        throw new Error(data.error || "Upload failed");
+                      }
 
                       setWinnerImage(data.url);
                     } catch (error) {
                       console.error(error);
+                      window.alert(
+                        error instanceof Error
+                          ? error.message
+                          : "Upload failed",
+                      );
                     } finally {
                       setUploadingImage(false);
                     }
                   }}
-                  // className="block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
                   className="block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-indigo-700"
                 />
 
                 {winnerImage ? (
-                  <img
-                    src={winnerImage}
-                    alt="preview"
-                    className="mt-4 aspect-[10/7] w-full rounded-2xl object-cover"
-                  />
+                  winnerMediaType === "video" ? (
+                    <video
+                      src={winnerImage}
+                      controls
+                      className="mt-4 aspect-[10/7] w-full rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={winnerImage}
+                      alt="preview"
+                      className="mt-4 aspect-[10/7] w-full rounded-2xl object-cover"
+                    />
+                  )
                 ) : null}
               </div>
 
@@ -4065,7 +4615,9 @@ export function DashboardTabs({
                 className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {uploadingImage
-                  ? "Uploading Image..."
+                  ? winnerMediaType === "video"
+                    ? "Uploading Video..."
+                    : "Uploading Image..."
                   : savingWinner
                     ? "Saving..."
                     : editingWinnerId
@@ -4092,6 +4644,8 @@ export function DashboardTabs({
 
                   setSliderImage("");
 
+                  setSliderMediaType("image");
+
                   setSliderStatus(true);
 
                   setSliderOrder(0);
@@ -4105,12 +4659,60 @@ export function DashboardTabs({
             <div className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Upload Image
+                  Media Type
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSliderMediaType("image");
+                      if (!editingSliderId) {
+                        setSliderImage("");
+                      }
+                    }}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                      sliderMediaType === "image"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Image
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSliderMediaType("video");
+                      if (!editingSliderId) {
+                        setSliderImage("");
+                      }
+                    }}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                      sliderMediaType === "video"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Video
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  {sliderMediaType === "video"
+                    ? "Upload Video"
+                    : "Upload Image"}
                 </label>
 
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={
+                    sliderMediaType === "video"
+                      ? "video/mp4,video/quicktime,video/webm"
+                      : "image/*"
+                  }
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
 
@@ -4122,6 +4724,7 @@ export function DashboardTabs({
                       const formData = new FormData();
 
                       formData.append("file", file);
+                      formData.append("mediaKind", sliderMediaType);
 
                       const response = await fetch("/api/admin/upload", {
                         method: "POST",
@@ -4130,9 +4733,18 @@ export function DashboardTabs({
 
                       const data = await response.json();
 
+                      if (!response.ok) {
+                        throw new Error(data.error || "Upload failed");
+                      }
+
                       setSliderImage(data.url);
                     } catch (error) {
                       console.error(error);
+                      window.alert(
+                        error instanceof Error
+                          ? error.message
+                          : "Upload failed",
+                      );
                     } finally {
                       setUploadingImage(false);
                     }
@@ -4141,11 +4753,19 @@ export function DashboardTabs({
                 />
 
                 {sliderImage ? (
-                  <img
-                    src={sliderImage}
-                    alt="preview"
-                    className="mt-4 aspect-[10/5] w-full rounded-2xl object-cover"
-                  />
+                  sliderMediaType === "video" ? (
+                    <video
+                      src={sliderImage}
+                      controls
+                      className="mt-4 aspect-[10/5] w-full rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={sliderImage}
+                      alt="preview"
+                      className="mt-4 aspect-[10/5] w-full rounded-2xl object-cover"
+                    />
+                  )
                 ) : null}
               </div>
 

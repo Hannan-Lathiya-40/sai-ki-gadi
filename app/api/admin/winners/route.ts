@@ -2,18 +2,33 @@ import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+function normalizeMediaType(value: unknown): "image" | "video" {
+  return value === "video" ? "video" : "image";
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log(body);
-    const { error } = await supabaseAdmin
-      .from("winners")
-      .insert({
-        user_id: body.user_id,
-        date: body.date,
-        slot: body.slot,
-        image: body.image,
-      });
+
+    if (!body.image || typeof body.image !== "string" || !body.image.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Media URL is required",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const { error } = await supabaseAdmin.from("winners").insert({
+      user_id: body.user_id,
+      date: body.date,
+      slot: body.slot,
+      image: body.image.trim(),
+      media_type: normalizeMediaType(body.media_type),
+    });
 
     if (error) {
       throw error;

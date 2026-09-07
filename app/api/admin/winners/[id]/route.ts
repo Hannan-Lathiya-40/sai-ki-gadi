@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+function normalizeMediaType(value: unknown): "image" | "video" {
+  return value === "video" ? "video" : "image";
+}
+
 export async function PUT(
   request: Request,
   context: {
@@ -13,6 +17,18 @@ export async function PUT(
   try {
     const body = await request.json();
 
+    if (!body.image || typeof body.image !== "string" || !body.image.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Media URL is required",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
     const { id } = await context.params;
 
     const { error } = await supabaseAdmin
@@ -21,7 +37,8 @@ export async function PUT(
         user_id: body.user_id,
         date: body.date,
         slot: body.slot,
-        image: body.image,
+        image: body.image.trim(),
+        media_type: normalizeMediaType(body.media_type),
       })
       .eq("id", id);
 
