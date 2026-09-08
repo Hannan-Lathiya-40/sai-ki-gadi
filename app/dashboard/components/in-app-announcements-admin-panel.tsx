@@ -1,0 +1,968 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import {
+  ANNOUNCEMENT_CATEGORIES,
+  ANNOUNCEMENT_STATUSES,
+  AUDIENCE_TYPES,
+  DEFAULT_CLOSE_BUTTON,
+  DEFAULT_PRIMARY_BUTTON,
+  TRIGGER_FEATURE_KEYS,
+  categoryLabel,
+  audienceLabel,
+  type InAppAnnouncement,
+} from "@/lib/in-app-announcements/types";
+
+type AnalyticsSummary = {
+  targetedUsers: number | null;
+  uniqueViews: number;
+  totalDisplays: number;
+  primaryButtonClicks: number;
+  secondaryButtonClicks: number;
+  dismissals: number;
+  acceptances: number;
+  pendingAcceptance: number | null;
+  audioPlays: number;
+};
+
+type UserSearchRow = {
+  id: string;
+  fullName: string;
+  phone: string;
+  membership_type: string;
+};
+
+/** Match existing Admin Panel form controls (About Us / Winner modals). */
+const fieldClass =
+  "h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500";
+const selectClass =
+  "h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-indigo-500";
+const textareaClass =
+  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500";
+const labelClass = "flex items-center gap-2 text-sm font-medium text-slate-700";
+const sectionTitleClass = "font-semibold text-slate-900";
+const helperClass = "text-xs text-slate-500";
+const secondaryBtnClass =
+  "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+const primaryBtnClass =
+  "rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60";
+
+const EMPTY_FORM: Partial<InAppAnnouncement> = {
+  internal_name: "",
+  category: "other",
+  internal_description: "",
+  priority: 100,
+  status: "draft",
+  image_fit: "contain",
+  background_color: "#000000",
+  primary_button: DEFAULT_PRIMARY_BUTTON,
+  secondary_button: null,
+  close_button: DEFAULT_CLOSE_BUTTON,
+  dismissal_type: "close_button",
+  show_close: true,
+  outside_tap_closes: false,
+  back_button_closes: true,
+  auto_dismiss: false,
+  auto_dismiss_seconds: 3,
+  close_after_audio_ends: false,
+  delay_after_audio_seconds: 2,
+  is_mandatory: false,
+  record_acceptance: false,
+  content_version: "1",
+  is_legal_consent: false,
+  audio_enabled: false,
+  audio_source: "upload",
+  audio_autoplay: true,
+  show_replay_button: false,
+  show_mute_button: true,
+  audience_type: "all_users",
+  active_within_days: 30,
+  trigger_type: "app_open",
+  trigger_feature_key: null,
+  trigger_delay_seconds: 0,
+  show_once_per_session: true,
+  timezone: "Asia/Kolkata",
+  frequency: "once_per_user",
+  is_birthday_template: false,
+  birthday_personalize_name: false,
+};
+
+export function InAppAnnouncementsAdminPanel() {
+  const [items, setItems] = useState<InAppAnnouncement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [form, setForm] = useState<Partial<InAppAnnouncement>>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState<"image" | "audio" | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const [userSearch, setUserSearch] = useState("");
+  const [userResults, setUserResults] = useState<UserSearchRow[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+
+  const loadItems = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search.trim()) params.set("q", search.trim());
+      const response = await fetch(
+        `/api/admin/in-app-announcements?${params.toString()}`,
+      );
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        items?: InAppAnnouncement[];
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to load announcements.");
+      }
+      setItems(payload.items ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load announcements.");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    void loadItems();
+  }, [loadItems]);
+
+  function openCreate() {
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM });
+    setSelectedUserIds([]);
+    setAnalytics(null);
+    setEditorOpen(true);
+  }
+
+  async function openEdit(id: string) {
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/in-app-announcements/${id}`);
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        item?: InAppAnnouncement;
+        error?: string;
+      };
+      if (!response.ok || !payload.item) {
+        throw new Error(payload.error ?? "Failed to load announcement.");
+      }
+      setEditingId(id);
+      setForm(payload.item);
+      setEditorOpen(true);
+
+      if (payload.item.audience_type === "custom_users") {
+        const recipientsRes = await fetch(
+          `/api/admin/in-app-announcements/${id}/recipients`,
+        );
+        const recipientsPayload = (await recipientsRes.json()) as {
+          recipients?: { user_id: string }[];
+        };
+        setSelectedUserIds(
+          (recipientsPayload.recipients ?? []).map((row) => row.user_id),
+        );
+      } else {
+        setSelectedUserIds([]);
+      }
+
+      const analyticsRes = await fetch(
+        `/api/admin/in-app-announcements/${id}/analytics`,
+      );
+      const analyticsPayload = (await analyticsRes.json()) as {
+        analytics?: AnalyticsSummary;
+        error?: string;
+      };
+      if (analyticsRes.ok && analyticsPayload.analytics) {
+        setAnalytics(analyticsPayload.analytics);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open editor.");
+    }
+  }
+
+  async function handleUpload(kind: "image" | "audio", file: File) {
+    setUploading(kind);
+    setError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("kind", kind);
+      const response = await fetch("/api/admin/in-app-announcements/upload", {
+        method: "POST",
+        body,
+      });
+      const payload = (await response.json()) as { ok?: boolean; url?: string; error?: string };
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error ?? "Upload failed.");
+      }
+      if (kind === "image") {
+        setForm((prev) => ({ ...prev, image_url: payload.url }));
+      } else {
+        setForm((prev) => ({ ...prev, audio_url: payload.url, audio_source: "upload" }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  async function saveAnnouncement(publish = false) {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        ...form,
+        status: publish ? "active" : (form.status ?? "draft"),
+        published_at: publish ? new Date().toISOString() : form.published_at,
+      };
+
+      const response = await fetch(
+        editingId
+          ? `/api/admin/in-app-announcements/${editingId}`
+          : "/api/admin/in-app-announcements",
+        {
+          method: editingId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      const result = (await response.json()) as {
+        ok?: boolean;
+        item?: InAppAnnouncement;
+        error?: string;
+      };
+      if (!response.ok || !result.item) {
+        throw new Error(result.error ?? "Save failed.");
+      }
+
+      const savedId = result.item.id;
+      if (form.audience_type === "custom_users") {
+        const recipientsRes = await fetch(
+          `/api/admin/in-app-announcements/${savedId}/recipients`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userIds: selectedUserIds }),
+          },
+        );
+        const recipientsPayload = (await recipientsRes.json()) as { error?: string };
+        if (!recipientsRes.ok) {
+          throw new Error(recipientsPayload.error ?? "Failed to save recipients.");
+        }
+      }
+
+      setEditorOpen(false);
+      await loadItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setStatus(id: string, status: string) {
+    setError(null);
+    const response = await fetch(`/api/admin/in-app-announcements/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      setError(payload.error ?? "Status update failed.");
+      return;
+    }
+    await loadItems();
+  }
+
+  async function duplicateAnnouncement(id: string) {
+    const response = await fetch(
+      `/api/admin/in-app-announcements/${id}/duplicate`,
+      { method: "POST" },
+    );
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      setError(payload.error ?? "Duplicate failed.");
+      return;
+    }
+    await loadItems();
+  }
+
+  async function searchUsers() {
+    setUserSearchLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (userSearch.trim()) params.set("q", userSearch.trim());
+      params.set("limit", "25");
+      const response = await fetch(
+        `/api/admin/in-app-announcements/users-search?${params.toString()}`,
+      );
+      const payload = (await response.json()) as {
+        users?: UserSearchRow[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "User search failed.");
+      }
+      setUserResults(payload.users ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "User search failed.");
+    } finally {
+      setUserSearchLoading(false);
+    }
+  }
+
+  const previewButtons = useMemo(
+    () => ({
+      close: form.close_button ?? DEFAULT_CLOSE_BUTTON,
+      primary: form.primary_button ?? DEFAULT_PRIMARY_BUTTON,
+    }),
+    [form.close_button, form.primary_button],
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">
+            Notifications → In-App Pop-ups
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Create image-based announcements with overlay buttons and optional audio.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+        >
+          Create New
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or description"
+          className={`${fieldClass} min-w-[220px]`}
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className={`${selectClass} w-auto min-w-[160px]`}
+        >
+          <option value="all">All statuses</option>
+          {ANNOUNCEMENT_STATUSES.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => void loadItems()}
+          className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Category</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Audience</th>
+                <th className="px-4 py-3">Trigger</th>
+                <th className="px-4 py-3">Updated</th>
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    Loading…
+                  </td>
+                </tr>
+              ) : items.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    No announcements yet.
+                  </td>
+                </tr>
+              ) : (
+                items.map((item) => (
+                  <tr key={item.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {item.internal_name}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{categoryLabel(item.category)}</td>
+                    <td className="px-4 py-3 capitalize text-slate-700">{item.status}</td>
+                    <td className="px-4 py-3 text-slate-700">{audienceLabel(item.audience_type)}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {item.trigger_type}
+                      {item.trigger_feature_key
+                        ? ` / ${item.trigger_feature_key}`
+                        : ""}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {new Date(item.updated_at).toLocaleString("en-IN")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="text-indigo-600 hover:underline"
+                          onClick={() => void openEdit(item.id)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="text-indigo-600 hover:underline"
+                          onClick={() => {
+                            setForm(item);
+                            setPreviewOpen(true);
+                          }}
+                        >
+                          Preview
+                        </button>
+                        <button
+                          type="button"
+                          className="text-indigo-600 hover:underline"
+                          onClick={() => void duplicateAnnouncement(item.id)}
+                        >
+                          Duplicate
+                        </button>
+                        {item.status !== "active" ? (
+                          <button
+                            type="button"
+                            className="text-emerald-600 hover:underline"
+                            onClick={() => void setStatus(item.id, "active")}
+                          >
+                            Publish
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-amber-600 hover:underline"
+                            onClick={() => void setStatus(item.id, "unpublished")}
+                          >
+                            Unpublish
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="text-rose-600 hover:underline"
+                          onClick={() => void setStatus(item.id, "unpublished")}
+                        >
+                          Archive
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {editorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <div className="my-6 w-full max-w-5xl rounded-2xl bg-white p-6 text-slate-900 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">
+                {editingId ? "Edit Announcement" : "Create Announcement"}
+              </h3>
+              <button
+                type="button"
+                className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+                onClick={() => setEditorOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <section className="space-y-3">
+                <h4 className={sectionTitleClass}>Basic Details</h4>
+                <input
+                  className={fieldClass}
+                  placeholder="Internal Notification Name"
+                  value={form.internal_name ?? ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, internal_name: e.target.value }))
+                  }
+                />
+                <textarea
+                  className={textareaClass}
+                  placeholder="Internal Description"
+                  rows={3}
+                  value={form.internal_description ?? ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      internal_description: e.target.value,
+                    }))
+                  }
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    className={selectClass}
+                    value={form.category ?? "other"}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        category: e.target.value as InAppAnnouncement["category"],
+                      }))
+                    }
+                  >
+                    {ANNOUNCEMENT_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {categoryLabel(category)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    className={fieldClass}
+                    placeholder="Priority"
+                    value={form.priority ?? 100}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        priority: Number(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h4 className={sectionTitleClass}>UI Image</h4>
+                {form.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={form.image_url}
+                    alt="Announcement preview"
+                    className="max-h-64 w-full rounded-lg border border-slate-200 bg-black object-contain"
+                  />
+                ) : null}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-indigo-700"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleUpload("image", file);
+                  }}
+                />
+                {uploading === "image" ? (
+                  <p className={helperClass}>Uploading image…</p>
+                ) : null}
+              </section>
+
+              <section className="space-y-3">
+                <h4 className={sectionTitleClass}>Show To</h4>
+                <select
+                  className={selectClass}
+                  value={form.audience_type ?? "all_users"}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      audience_type: e.target.value as InAppAnnouncement["audience_type"],
+                    }))
+                  }
+                >
+                  {AUDIENCE_TYPES.map((audience) => (
+                    <option key={audience} value={audience}>
+                      {audienceLabel(audience)}
+                    </option>
+                  ))}
+                </select>
+                {form.audience_type === "active_users" ? (
+                  <input
+                    type="number"
+                    className={fieldClass}
+                    placeholder="Active within days"
+                    value={form.active_within_days ?? 30}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        active_within_days: Number(e.target.value),
+                      }))
+                    }
+                  />
+                ) : null}
+                {form.audience_type === "custom_users" ? (
+                  <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex gap-2">
+                      <input
+                        className={fieldClass}
+                        placeholder="Search name / mobile / member id"
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="h-11 shrink-0 rounded-xl bg-slate-800 px-3 text-sm font-semibold text-white hover:bg-slate-900"
+                        onClick={() => void searchUsers()}
+                      >
+                        Search
+                      </button>
+                    </div>
+                    {userSearchLoading ? (
+                      <p className={helperClass}>Searching…</p>
+                    ) : null}
+                    <p className="text-sm text-slate-600">
+                      Selected users: {selectedUserIds.length}
+                    </p>
+                    <div className="max-h-40 space-y-1 overflow-y-auto">
+                      {userResults.map((user) => {
+                        const checked = selectedUserIds.includes(user.id);
+                        return (
+                          <label
+                            key={user.id}
+                            className={labelClass}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setSelectedUserIds((prev) =>
+                                  checked
+                                    ? prev.filter((id) => id !== user.id)
+                                    : [...prev, user.id],
+                                );
+                              }}
+                            />
+                            <span>
+                              {user.fullName} · {user.phone}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="space-y-3">
+                <h4 className={sectionTitleClass}>Actions & Dismissal</h4>
+                <label className={labelClass}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.show_close)}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, show_close: e.target.checked }))
+                    }
+                  />
+                  Show Close (×)
+                </label>
+                <label className={labelClass}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.outside_tap_closes)}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        outside_tap_closes: e.target.checked,
+                      }))
+                    }
+                  />
+                  Outside tap closes
+                </label>
+                <label className={labelClass}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.auto_dismiss)}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, auto_dismiss: e.target.checked }))
+                    }
+                  />
+                  Auto dismiss
+                </label>
+                <input
+                  type="number"
+                  className={fieldClass}
+                  placeholder="Auto dismiss seconds"
+                  value={form.auto_dismiss_seconds ?? 3}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      auto_dismiss_seconds: Number(e.target.value),
+                    }))
+                  }
+                />
+                <label className={labelClass}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.is_mandatory)}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        is_mandatory: e.target.checked,
+                        record_acceptance: e.target.checked
+                          ? true
+                          : prev.record_acceptance,
+                      }))
+                    }
+                  />
+                  Mandatory / record acceptance
+                </label>
+                <input
+                  className={fieldClass}
+                  placeholder="Content version"
+                  value={form.content_version ?? "1"}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, content_version: e.target.value }))
+                  }
+                />
+              </section>
+
+              <section className="space-y-3">
+                <h4 className={sectionTitleClass}>Audio</h4>
+                <label className={labelClass}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.audio_enabled)}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, audio_enabled: e.target.checked }))
+                    }
+                  />
+                  Audio enabled
+                </label>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-indigo-700"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleUpload("audio", file);
+                  }}
+                />
+                {form.audio_url ? (
+                  <audio controls src={form.audio_url} className="w-full" />
+                ) : null}
+                <p className={helperClass}>
+                  TTS generation interface is reserved for a future backend provider.
+                  Upload audio is fully supported.
+                </p>
+              </section>
+
+              <section className="space-y-3">
+                <h4 className={sectionTitleClass}>Trigger & Schedule</h4>
+                <select
+                  className={selectClass}
+                  value={form.trigger_type ?? "app_open"}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      trigger_type: e.target.value as InAppAnnouncement["trigger_type"],
+                    }))
+                  }
+                >
+                  <option value="app_open">App Open</option>
+                  <option value="feature_open">Specific Feature Open</option>
+                </select>
+                {form.trigger_type === "feature_open" ? (
+                  <select
+                    className={selectClass}
+                    value={form.trigger_feature_key ?? ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        trigger_feature_key: e.target.value || null,
+                      }))
+                    }
+                  >
+                    <option value="">Select screen</option>
+                    {TRIGGER_FEATURE_KEYS.map((feature) => (
+                      <option key={feature.key} value={feature.key}>
+                        {feature.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <label className="block text-sm font-semibold text-slate-700">
+                  Start
+                  <input
+                    type="datetime-local"
+                    className={`${fieldClass} mt-1`}
+                    value={form.starts_at ? form.starts_at.slice(0, 16) : ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        starts_at: e.target.value
+                          ? new Date(e.target.value).toISOString()
+                          : null,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  End
+                  <input
+                    type="datetime-local"
+                    className={`${fieldClass} mt-1`}
+                    value={form.ends_at ? form.ends_at.slice(0, 16) : ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        ends_at: e.target.value
+                          ? new Date(e.target.value).toISOString()
+                          : null,
+                      }))
+                    }
+                  />
+                </label>
+                <select
+                  className={selectClass}
+                  value={form.frequency ?? "once_per_user"}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, frequency: e.target.value }))
+                  }
+                >
+                  <option value="once_per_user">Once per User</option>
+                  <option value="once_per_day">Once per Day</option>
+                  <option value="every_app_open">Every App Open</option>
+                  <option value="once_per_session">Once per Session</option>
+                  <option value="once_per_birthday">Once per Birthday</option>
+                  <option value="custom_interval">Custom Interval</option>
+                </select>
+                <label className={labelClass}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.is_birthday_template)}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        is_birthday_template: e.target.checked,
+                        category: e.target.checked ? "birthday" : prev.category,
+                        frequency: e.target.checked
+                          ? "once_per_birthday"
+                          : prev.frequency,
+                      }))
+                    }
+                  />
+                  Birthday template
+                </label>
+              </section>
+            </div>
+
+            {analytics ? (
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                <h4 className="mb-2 font-semibold text-slate-900">Analytics</h4>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <div>Unique views: {analytics.uniqueViews}</div>
+                  <div>Displays: {analytics.totalDisplays}</div>
+                  <div>Primary clicks: {analytics.primaryButtonClicks}</div>
+                  <div>Acceptances: {analytics.acceptances}</div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className={secondaryBtnClass}
+                onClick={() => {
+                  setPreviewOpen(true);
+                }}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                className={secondaryBtnClass}
+                onClick={() => void saveAnnouncement(false)}
+              >
+                Save Draft
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                className={primaryBtnClass}
+                onClick={() => void saveAnnouncement(true)}
+              >
+                Publish
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {previewOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-black p-3 shadow-xl">
+            <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-black">
+              {form.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={form.image_url}
+                  alt="Preview"
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-white">
+                  No image
+                </div>
+              )}
+              {previewButtons.close.enabled !== false ? (
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 rounded-full bg-black/50 px-3 py-1 text-white"
+                >
+                  {previewButtons.close.label || "×"}
+                </button>
+              ) : null}
+              {previewButtons.primary.enabled !== false ? (
+                <button
+                  type="button"
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+                  style={{
+                    backgroundColor:
+                      previewButtons.primary.backgroundColor ?? "#4F46E5",
+                  }}
+                >
+                  {previewButtons.primary.label || "OK"}
+                </button>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="mt-3 w-full rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900"
+              onClick={() => setPreviewOpen(false)}
+            >
+              Close Preview
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

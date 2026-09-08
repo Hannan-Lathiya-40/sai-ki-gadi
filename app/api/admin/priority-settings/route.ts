@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+/** Legacy column names: all_platinum=Diamond, all_gold=Gold, matching_platinum=Silver */
 export type RequirementPrioritySettings = {
   id: number;
   matching_platinum_minutes: number;

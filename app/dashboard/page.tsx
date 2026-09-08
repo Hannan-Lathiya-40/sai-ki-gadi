@@ -355,6 +355,7 @@ export default async function DashboardPage() {
       ascending: false,
     });
 
+  // Legacy columns: all_platinum=Diamond, all_gold=Gold, matching_platinum=Silver
   const { data: prioritySettingsRow } = await supabaseAdmin
     .from("requirement_priority_settings")
     .select(
