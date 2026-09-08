@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --admin-text-scale: 1;
 }
 
 @theme inline {
@@ -25,17 +26,137 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Admin menu cards: never clip labels when A++ / A+++ scale the root font. */
-[data-admin-font-size] button.admin-nav-card {
+/*
+ * Admin accessibility: scale Tailwind TEXT tokens only.
+ * Do not change html font-size (that also scales rem spacing/icons and
+ * collapses nav cards on mobile into character-by-character wraps).
+ */
+html[data-admin-font-size="normal"] {
+  --admin-text-scale: 1;
+  /* ~160px: keeps 2 cols on typical phones when labels are normal size */
+  --admin-nav-card-min: 10rem;
+}
+
+html[data-admin-font-size="medium"] {
+  --admin-text-scale: 1.15;
+  /* ~200px: drops to 1 col on narrow phones, 2 cols when space allows */
+  --admin-nav-card-min: 12.5rem;
+}
+
+html[data-admin-font-size="large"] {
+  --admin-text-scale: 1.28;
+  /* ~272px: 1 col on phones; readability over column count */
+  --admin-nav-card-min: 17rem;
+}
+
+html[data-admin-font-size] {
+  --text-xs: calc(0.75rem * var(--admin-text-scale));
+  --text-sm: calc(0.875rem * var(--admin-text-scale));
+  --text-base: calc(1rem * var(--admin-text-scale));
+  --text-lg: calc(1.125rem * var(--admin-text-scale));
+  --text-xl: calc(1.25rem * var(--admin-text-scale));
+  --text-2xl: calc(1.5rem * var(--admin-text-scale));
+  --text-3xl: calc(1.875rem * var(--admin-text-scale));
+  --text-4xl: calc(2.25rem * var(--admin-text-scale));
+  --text-5xl: calc(3rem * var(--admin-text-scale));
+  --text-6xl: calc(3.75rem * var(--admin-text-scale));
+  --text-7xl: calc(4.5rem * var(--admin-text-scale));
+  --text-8xl: calc(6rem * var(--admin-text-scale));
+  --text-9xl: calc(8rem * var(--admin-text-scale));
+}
+
+/* ---- Admin nav cards: readable labels + adaptive grids ---- */
+
+/*
+ * auto-fit + min card width collapses columns when labels need space.
+ * Larger accessibility modes raise --admin-nav-card-min so phones go
+ * to 1 column instead of crushing text character-by-character.
+ */
+.admin-nav-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, var(--admin-nav-card-min, 10rem)), 1fr)
+  );
+}
+
+/* Desktop/tablet stay compact — fixed column counts */
+@media (min-width: 768px) {
+  .admin-nav-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .admin-nav-grid-features {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+button.admin-nav-card {
   white-space: normal;
   overflow: visible;
   height: auto;
+  min-width: 0;
 }
 
-[data-admin-font-size] button.admin-nav-card .admin-nav-card-label {
+/* Give label text a bit more room in tight 2-col phone layouts */
+@media (max-width: 767px) {
+  button.admin-nav-card {
+    gap: 0.375rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .admin-nav-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+}
+
+button.admin-nav-card .admin-nav-card-label {
+  min-width: 0;
+  flex: 1 1 auto;
   white-space: normal;
   overflow: visible;
   text-overflow: unset;
+  /* Prefer whole-word wraps; break long tokens only if they exceed the line box.
+     Never use break-all (that causes letter-by-letter columns). */
   overflow-wrap: break-word;
   word-break: normal;
+  word-wrap: break-word;
+  hyphens: none;
+  /* Scale arbitrary px label sizes that Tailwind utilities won't pick up */
+  font-size: calc(0.8125rem * var(--admin-text-scale, 1));
+  line-height: 1.35;
+}
+
+@media (min-width: 640px) {
+  button.admin-nav-card .admin-nav-card-label {
+    font-size: calc(0.875rem * var(--admin-text-scale, 1));
+  }
+}
+
+button.admin-nav-card .admin-nav-card-count {
+  flex-shrink: 0;
+  font-size: calc(0.6875rem * var(--admin-text-scale, 1));
+}
+
+@media (min-width: 640px) {
+  button.admin-nav-card .admin-nav-card-count {
+    font-size: calc(0.75rem * var(--admin-text-scale, 1));
+  }
+}
+
+/* Icons stay compact — do not grow with accessibility text scale */
+.admin-nav-icon {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+}
+
+.admin-nav-icon svg {
+  width: 1rem;
+  height: 1rem;
 }
