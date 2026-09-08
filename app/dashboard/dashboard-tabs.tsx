@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/format-datetime";
 
 import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
 import { InAppAnnouncementsAdminPanel } from "./components/in-app-announcements-admin-panel";
+import { AdminNavIcon } from "./admin-nav-icons";
 
 type MembershipCounts = {
   regular: number;
@@ -329,6 +330,63 @@ type TabKey =
   | "about-us"
   | "in-app-popups";
 
+type NavTabItem = {
+  key: TabKey;
+  label: string;
+  count?: number;
+  highlightIfCountAboveZero?: boolean;
+};
+
+function AdminNavCard({
+  item,
+  isActive,
+  onSelect,
+}: {
+  item: NavTabItem;
+  isActive: boolean;
+  onSelect: (key: TabKey) => void;
+}) {
+  const showCount = item.count !== undefined;
+  const isUrgent =
+    item.highlightIfCountAboveZero && (item.count ?? 0) > 0 && !isActive;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.key)}
+      className={`flex min-h-14 w-full items-center rounded-xl border px-3 py-2 text-left transition active:scale-[0.98] sm:px-3.5 sm:py-2.5 ${
+        isActive
+          ? "border-indigo-600 bg-indigo-600 text-white shadow-sm"
+          : isUrgent
+            ? "border-amber-300 bg-amber-50 text-slate-900 hover:border-amber-400 hover:bg-amber-100"
+            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm"
+      }`}
+    >
+      <AdminNavIcon tabKey={item.key} isActive={isActive} />
+      <span
+        className={`min-w-0 flex-1 text-[13px] font-semibold leading-tight sm:text-sm ${
+          isActive ? "text-white" : "text-slate-900"
+        }`}
+      >
+        {item.label}
+      </span>
+      {showCount ? (
+        <span
+          className={`ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums sm:px-2 sm:text-xs ${
+            isActive
+              ? "bg-indigo-500 text-white"
+              : isUrgent
+                ? "bg-amber-200 text-amber-900"
+                : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          {item.count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 type BirthdaySortKey = "dob_oldest" | "dob_newest";
 type BirthdayPresetFilter = "all" | "today" | "this_month" | "not_set";
 
@@ -473,6 +531,107 @@ export function DashboardTabs({
   );
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
+
+  const quickAccessTabs = useMemo<NavTabItem[]>(
+    () => [
+      { key: "overview", label: "Analytics" },
+      {
+        key: "pending",
+        label: "Pending Verification",
+        count: pendingCount,
+        highlightIfCountAboveZero: true,
+      },
+      {
+        key: "car-verification",
+        label: "Car Verification",
+        count: pendingVehicleCount,
+        highlightIfCountAboveZero: true,
+      },
+      { key: "users", label: "Users", count: users?.length || 0 },
+      {
+        key: "requirements",
+        label: "Requirements",
+        count: requirements?.length || 0,
+      },
+      {
+        key: "fraud-reports",
+        label: "Fraud Reports",
+        count: fraudReports?.length || 0,
+        highlightIfCountAboveZero: true,
+      },
+    ],
+    [
+      pendingCount,
+      pendingVehicleCount,
+      users?.length,
+      requirements?.length,
+      fraudReports?.length,
+    ],
+  );
+
+  const allFeatureTabs = useMemo<NavTabItem[]>(
+    () =>
+      [
+        { key: "about-us" as const, label: "About Us" },
+        { key: "birthday-date" as const, label: "Birthday Date" },
+        {
+          key: "cities" as const,
+          label: "Cities",
+          count: cities.length || 0,
+        },
+        {
+          key: "exchanges" as const,
+          label: "Exchanges",
+          count: exchanges?.length || 0,
+        },
+        { key: "in-app-popups" as const, label: "In-App Pop-ups" },
+        {
+          key: "not-started" as const,
+          label: "Not Started",
+          count: notStartedCount,
+        },
+        {
+          key: "priority-settings" as const,
+          label: "Priority Timeline",
+        },
+        {
+          key: "profile-changes" as const,
+          label: "Profile Changes",
+          count: pendingProfileChangeCount,
+        },
+        {
+          key: "rejected-partial" as const,
+          label: "Rejected/Partial",
+          count: rejectedPartialCount,
+        },
+        {
+          key: "minimum-fares" as const,
+          label: "Set Minimum Fare",
+          count: routeMinimumFares.length,
+        },
+        {
+          key: "sliders" as const,
+          label: "Sliders",
+          count: sliders?.length || 0,
+        },
+        {
+          key: "winners" as const,
+          label: "Winners",
+          count: winnerUser.length,
+        },
+      ].sort((a, b) => a.label.localeCompare(b.label)),
+    [
+      cities.length,
+      exchanges?.length,
+      notStartedCount,
+      pendingProfileChangeCount,
+      rejectedPartialCount,
+      routeMinimumFares.length,
+      sliders?.length,
+      winnerUser.length,
+    ],
+  );
+
   const [showWinnerModal, setShowWinnerModal] = useState(false);
 
   const [winnerUsers, setWinnerUsers] = useState<PendingVerificationUser[]>([]);
@@ -1758,16 +1917,16 @@ export function DashboardTabs({
           {errorMessage}
         </div>
       ) : null}
-      <header className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <header className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">
               Admin Dashboard
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:mt-1.5 sm:text-3xl">
               Sai ki Gadi Verification Console
             </h1>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-slate-600">
               Monitor signup analytics and manually verify document uploads.
             </p>
           </div>
@@ -1812,188 +1971,41 @@ export function DashboardTabs({
         </div>
       ) : null}
 
-      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "overview"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("overview")}
-        >
-          Analytics
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "pending"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("pending")}
-        >
-          Pending Verification ({pendingCount})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "rejected-partial"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("rejected-partial")}
-        >
-          Rejected/Partial ({rejectedPartialCount})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "not-started"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("not-started")}
-        >
-          Not Started ({notStartedCount})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "winners"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("winners")}
-        >
-          Winners ({winnerUser.length})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "cities"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("cities")}
-        >
-          Cities ({cities.length || 0})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "sliders"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("sliders")}
-        >
-          Sliders ({sliders?.length || 0})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "users"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("users")}
-        >
-          Users ({users?.length || 0})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "birthday-date"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("birthday-date")}
-        >
-          Birthday Date
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "requirements"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("requirements")}
-        >
-          Requirements ({requirements?.length || 0})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "exchanges"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("exchanges")}
-        >
-          Exchanges ({exchanges?.length || 0})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "fraud-reports"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("fraud-reports")}
-        >
-          Fraud Reports ({fraudReports?.length || 0})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "priority-settings"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("priority-settings")}
-        >
-          Priority Timeline
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "profile-changes"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("profile-changes")}
-        >
-          Profile Changes ({pendingProfileChangeCount})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "car-verification"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("car-verification")}
-        >
-          Car Verification ({pendingVehicleCount})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "minimum-fares"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("minimum-fares")}
-        >
-          Set Minimum Fare ({routeMinimumFares.length})
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "about-us"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("about-us")}
-        >
-          About Us
-        </button>
-        <button
-          className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "in-app-popups"
-              ? "bg-indigo-600 text-white"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("in-app-popups")}
-        >
-          In-App Pop-ups
-        </button>
-      </div>
+      <nav className="mb-5 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+            Quick Access
+          </h2>
+          <div className="grid grid-cols-2 gap-2 max-[360px]:grid-cols-1 md:grid-cols-3 lg:gap-2.5">
+            {quickAccessTabs.map((item) => (
+              <AdminNavCard
+                key={item.key}
+                item={item}
+                isActive={activeTab === item.key}
+                onSelect={setActiveTab}
+              />
+            ))}
+          </div>
+        </section>
+
+        <div className="border-t border-slate-100" />
+
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+            All Admin Features
+          </h2>
+          <div className="grid grid-cols-2 gap-2 max-[360px]:grid-cols-1 md:grid-cols-3 lg:gap-2.5 xl:grid-cols-4">
+            {allFeatureTabs.map((item) => (
+              <AdminNavCard
+                key={item.key}
+                item={item}
+                isActive={activeTab === item.key}
+                onSelect={setActiveTab}
+              />
+            ))}
+          </div>
+        </section>
+      </nav>
 
       {activeTab === "overview" ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
