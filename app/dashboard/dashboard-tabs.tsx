@@ -354,7 +354,7 @@ function AdminNavCard({
     <button
       type="button"
       onClick={() => onSelect(item.key)}
-      className={`flex min-h-14 w-full items-center rounded-xl border px-3 py-2 text-left transition active:scale-[0.98] sm:px-3.5 sm:py-2.5 ${
+      className={`admin-nav-card flex h-auto min-h-14 w-full items-start gap-0 overflow-visible whitespace-normal rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.98] sm:items-center sm:px-3.5 sm:py-2.5 ${
         isActive
           ? "border-indigo-600 bg-indigo-600 text-white shadow-sm"
           : isUrgent
@@ -364,7 +364,7 @@ function AdminNavCard({
     >
       <AdminNavIcon tabKey={item.key} isActive={isActive} />
       <span
-        className={`min-w-0 flex-1 text-[13px] font-semibold leading-tight sm:text-sm ${
+        className={`admin-nav-card-label min-w-0 flex-1 whitespace-normal break-words text-[13px] font-semibold leading-snug sm:text-sm ${
           isActive ? "text-white" : "text-slate-900"
         }`}
       >
@@ -372,7 +372,7 @@ function AdminNavCard({
       </span>
       {showCount ? (
         <span
-          className={`ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums sm:px-2 sm:text-xs ${
+          className={`ml-2 shrink-0 self-start rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums sm:self-center sm:px-2 sm:text-xs ${
             isActive
               ? "bg-indigo-500 text-white"
               : isUrgent

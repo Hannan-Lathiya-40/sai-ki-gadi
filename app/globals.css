@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Admin menu cards: never clip labels when A++ / A+++ scale the root font. */
+[data-admin-font-size] button.admin-nav-card {
+  white-space: normal;
+  overflow: visible;
+  height: auto;
+}
+
+[data-admin-font-size] button.admin-nav-card .admin-nav-card-label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: break-word;
+  word-break: normal;
+}

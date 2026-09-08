@@ -270,7 +270,7 @@ export function AdminNavIcon({
 
   return (
     <span
-      className={`mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:mr-2.5 ${
+      className={`mr-2 flex h-8 w-8 shrink-0 items-center justify-center self-start rounded-lg sm:mr-2.5 sm:self-center ${
         isActive ? "bg-white/20 text-white" : `${config.bgClass} ${config.colorClass}`
       }`}
     >
