@@ -105,6 +105,8 @@ export async function PUT(request: Request, context: Ctx) {
       "max_displays_per_user",
       "re_show_after_dismissal",
       "custom_interval_hours",
+      "custom_interval_value",
+      "custom_interval_unit",
       "is_birthday_template",
       "birthday_personalize_name",
       "published_at",

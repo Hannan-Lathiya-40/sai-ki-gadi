@@ -8,11 +8,18 @@ import {
   AUDIENCE_TYPES,
   DEFAULT_CLOSE_BUTTON,
   DEFAULT_PRIMARY_BUTTON,
-  TRIGGER_FEATURE_KEYS,
   categoryLabel,
   audienceLabel,
+  validateAnnouncementConfig,
   type InAppAnnouncement,
 } from "@/lib/in-app-announcements/types";
+
+type ScreenRegistryEntry = {
+  key: string;
+  label: string;
+  href: string;
+  minAppVersion: string;
+};
 
 type AnalyticsSummary = {
   targetedUsers: number | null;
@@ -47,6 +54,37 @@ const secondaryBtnClass =
   "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
 const primaryBtnClass =
   "rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60";
+
+function legacyCustomIntervalHours(
+  value: number,
+  unit: "minutes" | "hours" | "days",
+): number {
+  if (unit === "minutes") return Math.max(1, Math.ceil(value / 60));
+  if (unit === "days") return value * 24;
+  return value;
+}
+
+function buildSavePayload(form: Partial<InAppAnnouncement>) {
+  const next = { ...form };
+  if (next.frequency === "custom_interval") {
+    const value = Number(next.custom_interval_value ?? 1);
+    const unit = (next.custom_interval_unit ?? "hours") as
+      | "minutes"
+      | "hours"
+      | "days";
+    next.custom_interval_value = value;
+    next.custom_interval_unit = unit;
+    next.custom_interval_hours = legacyCustomIntervalHours(value, unit);
+  } else {
+    next.custom_interval_value = null;
+    next.custom_interval_unit = null;
+    next.custom_interval_hours = null;
+  }
+  if (!next.auto_dismiss) {
+    next.auto_dismiss_seconds = null;
+  }
+  return next;
+}
 
 const EMPTY_FORM: Partial<InAppAnnouncement> = {
   internal_name: "",
@@ -84,6 +122,9 @@ const EMPTY_FORM: Partial<InAppAnnouncement> = {
   show_once_per_session: true,
   timezone: "Asia/Kolkata",
   frequency: "once_per_user",
+  custom_interval_value: 6,
+  custom_interval_unit: "hours",
+  custom_interval_hours: 6,
   is_birthday_template: false,
   birthday_personalize_name: false,
 };
@@ -104,8 +145,17 @@ export function InAppAnnouncementsAdminPanel() {
 
   const [userSearch, setUserSearch] = useState("");
   const [userResults, setUserResults] = useState<UserSearchRow[]>([]);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<UserSearchRow[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const [userSearchError, setUserSearchError] = useState<string | null>(null);
+  const [userSearchPage, setUserSearchPage] = useState(1);
+  const [userSearchTotalPages, setUserSearchTotalPages] = useState(1);
+  const [screenRegistry, setScreenRegistry] = useState<ScreenRegistryEntry[]>([]);
+
+  const selectedUserIds = useMemo(
+    () => selectedUsers.map((user) => user.id),
+    [selectedUsers],
+  );
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -137,10 +187,25 @@ export function InAppAnnouncementsAdminPanel() {
     void loadItems();
   }, [loadItems]);
 
+  useEffect(() => {
+    void fetch("/api/admin/in-app-announcements/screen-registry")
+      .then((res) => res.json())
+      .then((payload: { ok?: boolean; registry?: { screens?: ScreenRegistryEntry[] } }) => {
+        if (payload.ok && payload.registry?.screens) {
+          setScreenRegistry(payload.registry.screens);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
   function openCreate() {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
-    setSelectedUserIds([]);
+    setSelectedUsers([]);
+    setUserResults([]);
+    setUserSearch("");
+    setUserSearchError(null);
+    setUserSearchPage(1);
     setAnalytics(null);
     setEditorOpen(true);
   }
@@ -158,7 +223,16 @@ export function InAppAnnouncementsAdminPanel() {
         throw new Error(payload.error ?? "Failed to load announcement.");
       }
       setEditingId(id);
-      setForm(payload.item);
+      setForm({
+        ...payload.item,
+        custom_interval_value:
+          payload.item.custom_interval_value ??
+          payload.item.custom_interval_hours ??
+          6,
+        custom_interval_unit:
+          payload.item.custom_interval_unit ??
+          (payload.item.frequency === "custom_interval" ? "hours" : null),
+      });
       setEditorOpen(true);
 
       if (payload.item.audience_type === "custom_users") {
@@ -166,13 +240,31 @@ export function InAppAnnouncementsAdminPanel() {
           `/api/admin/in-app-announcements/${id}/recipients`,
         );
         const recipientsPayload = (await recipientsRes.json()) as {
-          recipients?: { user_id: string }[];
+          recipients?: {
+            user_id: string;
+            users?: {
+              id: string;
+              first_name: string | null;
+              last_name: string | null;
+              phone: string | null;
+              membership_type?: string | null;
+            } | null;
+          }[];
         };
-        setSelectedUserIds(
-          (recipientsPayload.recipients ?? []).map((row) => row.user_id),
-        );
+        const selected = (recipientsPayload.recipients ?? []).map((row) => {
+          const user = row.users;
+          return {
+            id: row.user_id,
+            fullName: user
+              ? `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || "—"
+              : row.user_id.slice(0, 8),
+            phone: user?.phone ?? "—",
+            membership_type: user?.membership_type ?? "user",
+          };
+        });
+        setSelectedUsers(selected);
       } else {
-        setSelectedUserIds([]);
+        setSelectedUsers([]);
       }
 
       const analyticsRes = await fetch(
@@ -221,10 +313,16 @@ export function InAppAnnouncementsAdminPanel() {
     setSaving(true);
     setError(null);
     try {
+      const prepared = buildSavePayload(form);
+      const validationError = validateAnnouncementConfig(prepared);
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
       const payload = {
-        ...form,
-        status: publish ? "active" : (form.status ?? "draft"),
-        published_at: publish ? new Date().toISOString() : form.published_at,
+        ...prepared,
+        status: publish ? "active" : (prepared.status ?? "draft"),
+        published_at: publish ? new Date().toISOString() : prepared.published_at,
       };
 
       const response = await fetch(
@@ -299,28 +397,52 @@ export function InAppAnnouncementsAdminPanel() {
     await loadItems();
   }
 
-  async function searchUsers() {
+  async function searchUsers(page = 1) {
     setUserSearchLoading(true);
+    setUserSearchError(null);
     try {
       const params = new URLSearchParams();
       if (userSearch.trim()) params.set("q", userSearch.trim());
-      params.set("limit", "25");
+      params.set("page", String(page));
+      params.set("pageSize", "20");
       const response = await fetch(
         `/api/admin/in-app-announcements/users-search?${params.toString()}`,
       );
       const payload = (await response.json()) as {
         users?: UserSearchRow[];
         error?: string;
+        totalPages?: number;
       };
       if (!response.ok) {
         throw new Error(payload.error ?? "User search failed.");
       }
       setUserResults(payload.users ?? []);
+      setUserSearchPage(page);
+      setUserSearchTotalPages(payload.totalPages ?? 1);
+      if ((payload.users ?? []).length === 0 && userSearch.trim()) {
+        setUserSearchError("No users matched your search.");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "User search failed.");
+      const message = err instanceof Error ? err.message : "User search failed.";
+      setUserSearchError(message);
+      setError(message);
     } finally {
       setUserSearchLoading(false);
     }
+  }
+
+  function toggleSelectedUser(user: UserSearchRow) {
+    setSelectedUsers((prev) => {
+      const exists = prev.some((row) => row.id === user.id);
+      if (exists) {
+        return prev.filter((row) => row.id !== user.id);
+      }
+      return [...prev, user];
+    });
+  }
+
+  function removeSelectedUser(userId: string) {
+    setSelectedUsers((prev) => prev.filter((row) => row.id !== userId));
   }
 
   const previewButtons = useMemo(
@@ -529,35 +651,51 @@ export function InAppAnnouncementsAdminPanel() {
                     }))
                   }
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <select
-                    className={selectClass}
-                    value={form.category ?? "other"}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        category: e.target.value as InAppAnnouncement["category"],
-                      }))
-                    }
-                  >
-                    {ANNOUNCEMENT_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {categoryLabel(category)}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    className={fieldClass}
-                    placeholder="Priority"
-                    value={form.priority ?? 100}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        priority: Number(e.target.value),
-                      }))
-                    }
-                  />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-slate-700">
+                      Category
+                    </label>
+                    <select
+                      className={selectClass}
+                      value={form.category ?? "other"}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          category: e.target.value as InAppAnnouncement["category"],
+                        }))
+                      }
+                    >
+                      {ANNOUNCEMENT_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {categoryLabel(category)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-slate-700">
+                      Display Priority
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={9999}
+                      className={fieldClass}
+                      value={form.priority ?? 100}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          priority: Number(e.target.value),
+                        }))
+                      }
+                    />
+                    <p className={`${helperClass} mt-1`}>
+                      Lower numbers appear first when multiple announcements are
+                      eligible. Default is 100. Mandatory notices still rank
+                      above non-mandatory categories.
+                    </p>
+                  </div>
                 </div>
               </section>
 
@@ -625,11 +763,17 @@ export function InAppAnnouncementsAdminPanel() {
                         placeholder="Search name / mobile / member id"
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void searchUsers(1);
+                          }
+                        }}
                       />
                       <button
                         type="button"
                         className="h-11 shrink-0 rounded-xl bg-slate-800 px-3 text-sm font-semibold text-white hover:bg-slate-900"
-                        onClick={() => void searchUsers()}
+                        onClick={() => void searchUsers(1)}
                       >
                         Search
                       </button>
@@ -637,27 +781,41 @@ export function InAppAnnouncementsAdminPanel() {
                     {userSearchLoading ? (
                       <p className={helperClass}>Searching…</p>
                     ) : null}
+                    {userSearchError ? (
+                      <p className="text-xs text-rose-600">{userSearchError}</p>
+                    ) : null}
                     <p className="text-sm text-slate-600">
                       Selected users: {selectedUserIds.length}
                     </p>
+                    {selectedUsers.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedUsers.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+                            onClick={() => removeSelectedUser(user.id)}
+                            title="Remove selected user"
+                          >
+                            {user.fullName} · {user.phone} ×
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="max-h-40 space-y-1 overflow-y-auto">
+                      {userResults.length === 0 && !userSearchLoading ? (
+                        <p className={helperClass}>
+                          Search by name, 10-digit mobile, or member UUID.
+                        </p>
+                      ) : null}
                       {userResults.map((user) => {
                         const checked = selectedUserIds.includes(user.id);
                         return (
-                          <label
-                            key={user.id}
-                            className={labelClass}
-                          >
+                          <label key={user.id} className={labelClass}>
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={() => {
-                                setSelectedUserIds((prev) =>
-                                  checked
-                                    ? prev.filter((id) => id !== user.id)
-                                    : [...prev, user.id],
-                                );
-                              }}
+                              onChange={() => toggleSelectedUser(user)}
                             />
                             <span>
                               {user.fullName} · {user.phone}
@@ -666,6 +824,32 @@ export function InAppAnnouncementsAdminPanel() {
                         );
                       })}
                     </div>
+                    {userSearchTotalPages > 1 ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          className={secondaryBtnClass}
+                          disabled={userSearchLoading || userSearchPage <= 1}
+                          onClick={() => void searchUsers(userSearchPage - 1)}
+                        >
+                          Previous
+                        </button>
+                        <span className={helperClass}>
+                          Page {userSearchPage} of {userSearchTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          className={secondaryBtnClass}
+                          disabled={
+                            userSearchLoading ||
+                            userSearchPage >= userSearchTotalPages
+                          }
+                          onClick={() => void searchUsers(userSearchPage + 1)}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </section>
@@ -700,23 +884,44 @@ export function InAppAnnouncementsAdminPanel() {
                     type="checkbox"
                     checked={Boolean(form.auto_dismiss)}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, auto_dismiss: e.target.checked }))
+                      setForm((prev) => ({
+                        ...prev,
+                        auto_dismiss: e.target.checked,
+                        auto_dismiss_seconds: e.target.checked
+                          ? Math.max(prev.auto_dismiss_seconds ?? 3, 1)
+                          : null,
+                      }))
                     }
                   />
                   Auto dismiss
                 </label>
-                <input
-                  type="number"
-                  className={fieldClass}
-                  placeholder="Auto dismiss seconds"
-                  value={form.auto_dismiss_seconds ?? 3}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      auto_dismiss_seconds: Number(e.target.value),
-                    }))
-                  }
-                />
+                {form.auto_dismiss ? (
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-slate-700">
+                      Auto dismiss seconds
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={3600}
+                      className={fieldClass}
+                      value={form.auto_dismiss_seconds ?? 3}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          auto_dismiss_seconds: Math.max(
+                            1,
+                            Number(e.target.value) || 1,
+                          ),
+                        }))
+                      }
+                    />
+                    <p className={`${helperClass} mt-1`}>
+                      Must be at least 1 second. Set Auto dismiss off to disable
+                      the timer completely.
+                    </p>
+                  </div>
+                ) : null}
                 <label className={labelClass}>
                   <input
                     type="checkbox"
@@ -800,12 +1005,23 @@ export function InAppAnnouncementsAdminPanel() {
                     }
                   >
                     <option value="">Select screen</option>
-                    {TRIGGER_FEATURE_KEYS.map((feature) => (
+                    {screenRegistry.map((feature) => (
                       <option key={feature.key} value={feature.key}>
                         {feature.label}
                       </option>
                     ))}
                   </select>
+                ) : null}
+                {form.trigger_type === "feature_open" &&
+                form.trigger_feature_key &&
+                !screenRegistry.some(
+                  (screen) => screen.key === form.trigger_feature_key,
+                ) ? (
+                  <p className="text-xs text-amber-700">
+                    Saved screen key &quot;{form.trigger_feature_key}&quot; is
+                    not in the current app registry. It will remain stored but
+                    may not trigger on older app versions.
+                  </p>
                 ) : null}
                 <label className="block text-sm font-semibold text-slate-700">
                   Start
@@ -853,6 +1069,54 @@ export function InAppAnnouncementsAdminPanel() {
                   <option value="once_per_birthday">Once per Birthday</option>
                   <option value="custom_interval">Custom Interval</option>
                 </select>
+                {form.frequency === "custom_interval" ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-slate-700">
+                        Interval Value
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        className={fieldClass}
+                        value={form.custom_interval_value ?? 1}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            custom_interval_value: Math.max(
+                              1,
+                              Number(e.target.value) || 1,
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-slate-700">
+                        Interval Unit
+                      </label>
+                      <select
+                        className={selectClass}
+                        value={form.custom_interval_unit ?? "hours"}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            custom_interval_unit: e.target
+                              .value as InAppAnnouncement["custom_interval_unit"],
+                          }))
+                        }
+                      >
+                        <option value="minutes">Minutes</option>
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                    <p className={`${helperClass} col-span-2`}>
+                      Example: every 30 minutes, every 6 hours, or every 2 days
+                      after the last eligible display.
+                    </p>
+                  </div>
+                ) : null}
                 <label className={labelClass}>
                   <input
                     type="checkbox"

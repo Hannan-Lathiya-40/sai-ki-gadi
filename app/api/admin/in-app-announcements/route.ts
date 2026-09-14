@@ -115,6 +115,8 @@ export async function POST(request: Request) {
       max_displays_per_user: body.max_displays_per_user ?? null,
       re_show_after_dismissal: body.re_show_after_dismissal ?? false,
       custom_interval_hours: body.custom_interval_hours ?? null,
+      custom_interval_value: body.custom_interval_value ?? null,
+      custom_interval_unit: body.custom_interval_unit ?? null,
       is_birthday_template: body.is_birthday_template ?? false,
       birthday_personalize_name: body.birthday_personalize_name ?? false,
     };

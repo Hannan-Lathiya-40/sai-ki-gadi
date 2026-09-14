@@ -1,0 +1,54 @@
+{
+  "appVersion": "0.1.1",
+  "generatedAt": "2026-09-08T04:28:51.447Z",
+  "screens": [
+    {
+      "key": "home",
+      "label": "Home",
+      "href": "/(app)/(tabs)/home",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "requests",
+      "label": "Requirements",
+      "href": "/(app)/(tabs)/requests",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "drivers",
+      "label": "Drivers",
+      "href": "/(app)/(tabs)/drivers",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "exchange",
+      "label": "Exchange",
+      "href": "/(app)/(tabs)/exchange",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "cab_avail",
+      "label": "Cab Available",
+      "href": "/(app)/(tabs)/cab-avail",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "membership",
+      "label": "Membership",
+      "href": "/(app)/account/membership",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "my_cars",
+      "label": "My Cars",
+      "href": "/(app)/account/my-cars",
+      "minAppVersion": "0.1.1"
+    },
+    {
+      "key": "account",
+      "label": "Account",
+      "href": "/(app)/account",
+      "minAppVersion": "0.1.1"
+    }
+  ]
+}

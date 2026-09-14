@@ -145,6 +145,8 @@ export type InAppAnnouncement = {
   max_displays_per_user: number | null;
   re_show_after_dismissal: boolean;
   custom_interval_hours: number | null;
+  custom_interval_value: number | null;
+  custom_interval_unit: "minutes" | "hours" | "days" | null;
   is_birthday_template: boolean;
   birthday_personalize_name: boolean;
   published_at: string | null;
@@ -220,26 +222,66 @@ export function validateAnnouncementConfig(input: {
   outside_tap_closes?: boolean;
   back_button_closes?: boolean;
   auto_dismiss?: boolean;
+  auto_dismiss_seconds?: number | null;
   close_after_audio_ends?: boolean;
+  priority?: number;
+  frequency?: string;
+  custom_interval_value?: number | null;
+  custom_interval_unit?: string | null;
+  audio_enabled?: boolean;
+  audio_url?: string | null;
 }): string | null {
   const mandatory = Boolean(input.is_mandatory);
-  if (!mandatory) return null;
+  if (mandatory) {
+    if (input.show_close) {
+      return "Mandatory notices cannot show a Close (×) button.";
+    }
+    if (input.outside_tap_closes) {
+      return "Mandatory notices cannot allow outside tap to close.";
+    }
+    if (input.back_button_closes) {
+      return "Mandatory notices cannot allow Android Back to close.";
+    }
+    if (input.auto_dismiss || input.close_after_audio_ends) {
+      return "Mandatory notices cannot auto-dismiss or close after audio.";
+    }
+    if (!input.record_acceptance) {
+      return "Mandatory notices must record acceptance.";
+    }
+  }
 
-  if (input.show_close) {
-    return "Mandatory notices cannot show a Close (×) button.";
+  const priority = Number(input.priority ?? 100);
+  if (!Number.isFinite(priority) || priority < 1 || priority > 9999) {
+    return "Display priority must be a number between 1 and 9999.";
   }
-  if (input.outside_tap_closes) {
-    return "Mandatory notices cannot allow outside tap to close.";
+
+  if (input.auto_dismiss) {
+    const seconds = Number(input.auto_dismiss_seconds ?? 0);
+    if (!Number.isFinite(seconds) || seconds < 1 || seconds > 3600) {
+      return "Auto dismiss must be between 1 and 3600 seconds when enabled.";
+    }
   }
-  if (input.back_button_closes) {
-    return "Mandatory notices cannot allow Android Back to close.";
+
+  if (input.frequency === "custom_interval") {
+    const value = Number(input.custom_interval_value ?? 0);
+    const unit = input.custom_interval_unit ?? "hours";
+    if (!Number.isFinite(value) || value < 1) {
+      return "Custom interval value must be at least 1.";
+    }
+    const maxByUnit =
+      unit === "minutes" ? 10080 : unit === "hours" ? 720 : 365;
+    if (value > maxByUnit) {
+      return `Custom interval is too large for ${unit}.`;
+    }
+    if (!["minutes", "hours", "days"].includes(unit)) {
+      return "Custom interval unit must be minutes, hours, or days.";
+    }
   }
-  if (input.auto_dismiss || input.close_after_audio_ends) {
-    return "Mandatory notices cannot auto-dismiss or close after audio.";
+
+  if (input.audio_enabled && !input.audio_url?.trim()) {
+    return "Audio is enabled but no audio file has been uploaded.";
   }
-  if (!input.record_acceptance) {
-    return "Mandatory notices must record acceptance.";
-  }
+
   return null;
 }
 
