@@ -372,6 +372,21 @@ export default async function DashboardPage() {
     updated_at: prioritySettingsRow?.updated_at ?? null,
   };
 
+  const { data: luckyDrawNotificationSettingsRow } = await supabaseAdmin
+    .from("lucky_draw_notification_settings")
+    .select("id, enabled, slots, updated_at")
+    .eq("id", 1)
+    .maybeSingle();
+
+  const luckyDrawNotificationSettings = {
+    id: 1 as const,
+    enabled: luckyDrawNotificationSettingsRow?.enabled ?? true,
+    slots: Array.isArray(luckyDrawNotificationSettingsRow?.slots)
+      ? (luckyDrawNotificationSettingsRow.slots as string[])
+      : ["10:00", "14:00", "18:00", "21:00"],
+    updated_at: luckyDrawNotificationSettingsRow?.updated_at ?? null,
+  };
+
   const { data: requirements, error: requirementsError } = await supabaseAdmin
     .from("requirements")
     .select(
@@ -579,6 +594,7 @@ export default async function DashboardPage() {
           exchanges={exchanges ?? []}
           fraudReports={fraudReports ?? []}
           prioritySettings={prioritySettings}
+          luckyDrawNotificationSettings={luckyDrawNotificationSettings}
           profileChangeRequests={profileChangeRequests}
           vehicles={vehicles}
           routeMinimumFares={routeMinimumFares}

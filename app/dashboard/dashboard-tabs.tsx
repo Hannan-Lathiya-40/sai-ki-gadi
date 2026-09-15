@@ -6,6 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { exportToExcel } from "@/lib/export-excel";
 import { formatDateTime } from "@/lib/format-datetime";
+import {
+  formatUploadNetworkError,
+  readUploadResponse,
+  validateMediaFileSize,
+} from "@/lib/admin-upload";
 
 import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
 import { InAppAnnouncementsAdminPanel } from "./components/in-app-announcements-admin-panel";
@@ -26,6 +31,20 @@ type PendingVerificationUser = {
 };
 
 type WinnerMediaType = "image" | "video";
+
+type LuckyDrawNotificationSettings = {
+  id: number;
+  enabled: boolean;
+  slots: string[];
+  updated_at: string | null;
+};
+
+const LUCKY_DRAW_SLOT_OPTIONS: { value: string; label: string }[] = [
+  { value: "10:00", label: "10:00 AM" },
+  { value: "14:00", label: "02:00 PM" },
+  { value: "18:00", label: "06:00 PM" },
+  { value: "21:00", label: "09:00 PM" },
+];
 
 type WinnersUser = {
   id: string;
@@ -300,6 +319,7 @@ type DashboardTabsProps = {
   exchanges: Exchange[];
   fraudReports: FraudReport[];
   prioritySettings: PrioritySettings;
+  luckyDrawNotificationSettings: LuckyDrawNotificationSettings;
   profileChangeRequests: ProfileChangeRequestRow[];
   vehicles: VehicleVerificationRow[];
   routeMinimumFares: RouteMinimumFareRow[];
@@ -449,6 +469,7 @@ export function DashboardTabs({
   exchanges,
   fraudReports,
   prioritySettings,
+  luckyDrawNotificationSettings,
   profileChangeRequests,
   vehicles,
   routeMinimumFares,
@@ -726,6 +747,118 @@ export function DashboardTabs({
     setGoldMinutes(String(prioritySettings?.all_gold_minutes ?? 3));
     setSilverMinutes(String(prioritySettings?.matching_platinum_minutes ?? 4));
   }, [prioritySettings]);
+
+  const [luckyDrawEnabled, setLuckyDrawEnabled] = useState(
+    luckyDrawNotificationSettings?.enabled ?? true,
+  );
+  const [luckyDrawSlots, setLuckyDrawSlots] = useState<string[]>(
+    Array.isArray(luckyDrawNotificationSettings?.slots)
+      ? [...luckyDrawNotificationSettings.slots]
+      : ["10:00", "14:00", "18:00", "21:00"],
+  );
+  const [savingLuckyDrawSettings, setSavingLuckyDrawSettings] = useState(false);
+  const [luckyDrawSettingsMessage, setLuckyDrawSettingsMessage] = useState<
+    string | null
+  >(null);
+  const [sendingLuckyDrawTest, setSendingLuckyDrawTest] = useState(false);
+  const [luckyDrawTestMessage, setLuckyDrawTestMessage] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    setLuckyDrawEnabled(luckyDrawNotificationSettings?.enabled ?? true);
+    setLuckyDrawSlots(
+      Array.isArray(luckyDrawNotificationSettings?.slots)
+        ? [...luckyDrawNotificationSettings.slots]
+        : ["10:00", "14:00", "18:00", "21:00"],
+    );
+  }, [luckyDrawNotificationSettings]);
+
+  function toggleLuckyDrawSlot(slot: string) {
+    setLuckyDrawSlots((prev) => {
+      if (prev.includes(slot)) {
+        return prev.filter((s) => s !== slot);
+      }
+      return [...prev, slot].sort();
+    });
+  }
+
+  async function saveLuckyDrawNotificationSettings() {
+    if (luckyDrawSlots.length < 3 || luckyDrawSlots.length > 4) {
+      setLuckyDrawSettingsMessage(
+        "Select 3 or 4 notification times (10:00 AM, 02:00 PM, 06:00 PM, 09:00 PM).",
+      );
+      return;
+    }
+
+    try {
+      setSavingLuckyDrawSettings(true);
+      setLuckyDrawSettingsMessage(null);
+      const response = await fetch(
+        "/api/admin/lucky-draw-notification-settings",
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: luckyDrawEnabled,
+            slots: luckyDrawSlots,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setLuckyDrawSettingsMessage(
+          payload?.error ?? "Failed to save Lucky Draw notification settings.",
+        );
+        return;
+      }
+      setLuckyDrawSettingsMessage("Lucky Draw notification settings saved.");
+      router.refresh();
+    } catch {
+      setLuckyDrawSettingsMessage(
+        "Failed to save Lucky Draw notification settings.",
+      );
+    } finally {
+      setSavingLuckyDrawSettings(false);
+    }
+  }
+
+  async function sendLuckyDrawTestNotification() {
+    try {
+      setSendingLuckyDrawTest(true);
+      setLuckyDrawTestMessage(null);
+      const response = await fetch(
+        "/api/admin/lucky-draw-notification-test",
+        { method: "POST" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setLuckyDrawTestMessage(
+          payload?.error ?? "Failed to send test notification.",
+        );
+        return;
+      }
+      const skipped =
+        payload?.result &&
+        typeof payload.result === "object" &&
+        "skipped" in payload.result
+          ? String((payload.result as { skipped?: string }).skipped ?? "")
+          : "";
+      if (skipped === "no_winner") {
+        setLuckyDrawTestMessage(
+          "No winner for today (Asia/Kolkata). Add a winner first.",
+        );
+        return;
+      }
+      setLuckyDrawTestMessage(
+        "Test Lucky Draw notification sent (existing Sai Ki Gadi sound).",
+      );
+    } catch {
+      setLuckyDrawTestMessage("Failed to send test notification.");
+    } finally {
+      setSendingLuckyDrawTest(false);
+    }
+  }
 
   const diamondPreview = Number(diamondMinutes) || 0;
   const goldPreview = Number(goldMinutes) || 0;
@@ -4208,6 +4341,98 @@ export function DashboardTabs({
         <InAppAnnouncementsAdminPanel />
       ) : (
         <>
+          <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900">
+              Lucky Draw Notification
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Sends FCM with the existing Sai Ki Gadi notification sound when
+              today&apos;s winner exists. Times are Asia/Kolkata. Booking
+              notifications are unchanged.
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <span className="text-sm font-semibold text-slate-700">
+                Enable / Disable
+              </span>
+              <button
+                type="button"
+                onClick={() => setLuckyDrawEnabled((v) => !v)}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                  luckyDrawEnabled
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+                }`}
+              >
+                {luckyDrawEnabled ? "ON" : "OFF"}
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <p className="mb-2 text-sm font-semibold text-slate-700">
+                Notification times (select 3 or 4)
+              </p>
+              <div className="flex flex-wrap gap-3">
+                {LUCKY_DRAW_SLOT_OPTIONS.map((opt) => {
+                  const checked = luckyDrawSlots.includes(opt.value);
+                  return (
+                    <label
+                      key={opt.value}
+                      className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+                        checked
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleLuckyDrawSlot(opt.value)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                      />
+                      {opt.label}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Selected: {luckyDrawSlots.length} / 4 (must be 3 or 4)
+              </p>
+            </div>
+
+            {luckyDrawSettingsMessage ? (
+              <p className="mt-3 text-sm font-medium text-indigo-700">
+                {luckyDrawSettingsMessage}
+              </p>
+            ) : null}
+            {luckyDrawTestMessage ? (
+              <p className="mt-2 text-sm font-medium text-slate-700">
+                {luckyDrawTestMessage}
+              </p>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void saveLuckyDrawNotificationSettings()}
+                disabled={savingLuckyDrawSettings}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingLuckyDrawSettings ? "Saving..." : "Save Settings"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void sendLuckyDrawTestNotification()}
+                disabled={sendingLuckyDrawTest}
+                className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {sendingLuckyDrawTest
+                  ? "Sending..."
+                  : "Send test notification now"}
+              </button>
+            </div>
+          </div>
+
           <div className="mb-4 flex justify-end">
             <button
               onClick={() => {
@@ -4598,6 +4823,14 @@ export function DashboardTabs({
                     try {
                       setUploadingImage(true);
 
+                      const sizeError = validateMediaFileSize(
+                        file,
+                        winnerMediaType,
+                      );
+                      if (sizeError) {
+                        throw new Error(sizeError);
+                      }
+
                       const formData = new FormData();
 
                       formData.append("file", file);
@@ -4608,20 +4841,16 @@ export function DashboardTabs({
                         body: formData,
                       });
 
-                      const data = await response.json();
+                      const data = await readUploadResponse(response);
 
-                      if (!response.ok) {
+                      if (!data.ok || !data.url) {
                         throw new Error(data.error || "Upload failed");
                       }
 
                       setWinnerImage(data.url);
                     } catch (error) {
-                      console.error(error);
-                      window.alert(
-                        error instanceof Error
-                          ? error.message
-                          : "Upload failed",
-                      );
+                      console.error("Winner upload error:", error);
+                      window.alert(formatUploadNetworkError(error));
                     } finally {
                       setUploadingImage(false);
                     }
@@ -4770,25 +4999,29 @@ export function DashboardTabs({
                       formData.append("file", file);
                       formData.append("mediaKind", sliderMediaType);
 
+                      const sizeError = validateMediaFileSize(
+                        file,
+                        sliderMediaType,
+                      );
+                      if (sizeError) {
+                        throw new Error(sizeError);
+                      }
+
                       const response = await fetch("/api/admin/upload", {
                         method: "POST",
                         body: formData,
                       });
 
-                      const data = await response.json();
+                      const data = await readUploadResponse(response);
 
-                      if (!response.ok) {
+                      if (!data.ok || !data.url) {
                         throw new Error(data.error || "Upload failed");
                       }
 
                       setSliderImage(data.url);
                     } catch (error) {
-                      console.error(error);
-                      window.alert(
-                        error instanceof Error
-                          ? error.message
-                          : "Upload failed",
-                      );
+                      console.error("Slider upload error:", error);
+                      window.alert(formatUploadNetworkError(error));
                     } finally {
                       setUploadingImage(false);
                     }
