@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { supabaseAdmin, usingServiceRole, serviceRoleConfigIssue, supabaseProjectHost } from "@/lib/supabase-admin";
 
@@ -328,10 +329,35 @@ export default async function DashboardPage() {
       membershipType: normalizeMembership(user.membership_type),
     }));
 
-  const { data: winners } = await supabaseAdmin
-    .from("winners")
-    .select(
-      `
+  const usersById = new Map(
+    (allUsers ?? []).map((u) => [
+      u.id,
+      {
+        first_name: u.first_name,
+        last_name: u.last_name,
+        phone: u.phone,
+      },
+    ]),
+  );
+
+  // Second wave: all independent module datasets in parallel (was sequential).
+  const [
+    winnersResult,
+    citiesResult,
+    slidersResult,
+    prioritySettingsResult,
+    luckyDrawResult,
+    requirementsResult,
+    exchangesResult,
+    fraudReportsResult,
+    profileChangeRequestsResult,
+    vehiclesResult,
+    routeMinimumFaresResult,
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("winners")
+      .select(
+        `
     *,
     users (
       first_name,
@@ -339,58 +365,32 @@ export default async function DashboardPage() {
       phone
     )
   `,
-    )
-    .order("created_at", { ascending: false });
-
-  const { data: cities } = await supabaseAdmin
-    .from("cities")
-    .select("*")
-    .order("city", { ascending: true });
-
-  const { data: sliders } = await supabaseAdmin
-    .from("sliders")
-    .select("*")
-    .order("display_order", { ascending: true })
-    .order("created_at", {
-      ascending: false,
-    });
-
-  // Legacy columns: all_platinum=Diamond, all_gold=Gold, matching_platinum=Silver
-  const { data: prioritySettingsRow } = await supabaseAdmin
-    .from("requirement_priority_settings")
-    .select(
-      "matching_platinum_minutes, all_platinum_minutes, all_gold_minutes, updated_at",
-    )
-    .eq("id", 1)
-    .maybeSingle();
-
-  const prioritySettings = {
-    matching_platinum_minutes:
-      prioritySettingsRow?.matching_platinum_minutes ?? 4,
-    all_platinum_minutes: prioritySettingsRow?.all_platinum_minutes ?? 4,
-    all_gold_minutes: prioritySettingsRow?.all_gold_minutes ?? 3,
-    updated_at: prioritySettingsRow?.updated_at ?? null,
-  };
-
-  const { data: luckyDrawNotificationSettingsRow } = await supabaseAdmin
-    .from("lucky_draw_notification_settings")
-    .select("id, enabled, slots, updated_at")
-    .eq("id", 1)
-    .maybeSingle();
-
-  const luckyDrawNotificationSettings = {
-    id: 1 as const,
-    enabled: luckyDrawNotificationSettingsRow?.enabled ?? true,
-    slots: Array.isArray(luckyDrawNotificationSettingsRow?.slots)
-      ? (luckyDrawNotificationSettingsRow.slots as string[])
-      : ["10:00", "14:00", "18:00", "21:00"],
-    updated_at: luckyDrawNotificationSettingsRow?.updated_at ?? null,
-  };
-
-  const { data: requirements, error: requirementsError } = await supabaseAdmin
-    .from("requirements")
-    .select(
-      `
+      )
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabaseAdmin.from("cities").select("*").order("city", { ascending: true }),
+    supabaseAdmin
+      .from("sliders")
+      .select("*")
+      .order("display_order", { ascending: true })
+      .order("created_at", { ascending: false }),
+    // Legacy columns: all_platinum=Diamond, all_gold=Gold, matching_platinum=Silver
+    supabaseAdmin
+      .from("requirement_priority_settings")
+      .select(
+        "matching_platinum_minutes, all_platinum_minutes, all_gold_minutes, updated_at",
+      )
+      .eq("id", 1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("lucky_draw_notification_settings")
+      .select("id, enabled, slots, updated_at")
+      .eq("id", 1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("requirements")
+      .select(
+        `
       *,
       users!requirements_user_id_fkey (
         first_name,
@@ -403,18 +403,13 @@ export default async function DashboardPage() {
         phone
       )
     `,
-    )
-    .order("created_at", {
-      ascending: false,
-    });
-
-  console.log("REQUIREMENTS:", requirements);
-  console.log("REQUIREMENTS ERROR:", requirementsError);
-
-  const { data: exchanges } = await supabaseAdmin
-    .from("exchange_listings")
-    .select(
-      `
+      )
+      .order("created_at", { ascending: false })
+      .limit(500),
+    supabaseAdmin
+      .from("exchange_listings")
+      .select(
+        `
     *,
     users!exchange_listings_user_id_fkey (
       first_name,
@@ -427,15 +422,13 @@ export default async function DashboardPage() {
       phone
     )
   `,
-    )
-    .order("created_at", {
-      ascending: false,
-    });
-
-  const { data: fraudReports } = await supabaseAdmin
-    .from("fraud_reports")
-    .select(
-      `
+      )
+      .order("created_at", { ascending: false })
+      .limit(500),
+    supabaseAdmin
+      .from("fraud_reports")
+      .select(
+        `
     *,
     from_user:users!fraud_reports_from_user_id_fkey (
       first_name,
@@ -448,18 +441,13 @@ export default async function DashboardPage() {
       phone
     )
   `,
-    )
-    .order("created_at", {
-      ascending: false,
-    });
-
-  const {
-    data: profileChangeRequestRows,
-    error: profileChangeRequestsError,
-  } = await supabaseAdmin
-    .from("profile_change_requests")
-    .select(
-      `
+      )
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabaseAdmin
+      .from("profile_change_requests")
+      .select(
+        `
       id,
       user_id,
       status,
@@ -469,20 +457,76 @@ export default async function DashboardPage() {
       reviewed_at,
       reviewed_by
     `,
-    )
-    .order("requested_at", { ascending: false })
-    .limit(200);
+      )
+      .order("requested_at", { ascending: false })
+      .limit(200),
+    supabaseAdmin
+      .from("user_vehicles")
+      .select(
+        `
+      id,
+      user_id,
+      registration_number,
+      normalized_registration_number,
+      verification_status,
+      rejection_reason,
+      created_at,
+      reviewed_at,
+      reviewed_by
+    `,
+      )
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabaseAdmin
+      .from("route_minimum_fares")
+      .select(
+        `
+      id,
+      from_city,
+      from_state,
+      to_city,
+      to_state,
+      minimum_fare,
+      is_active,
+      created_at,
+      updated_at
+    `,
+      )
+      .order("updated_at", { ascending: false })
+      .limit(500),
+  ]);
 
-  const usersById = new Map(
-    (allUsers ?? []).map((u) => [
-      u.id,
-      {
-        first_name: u.first_name,
-        last_name: u.last_name,
-        phone: u.phone,
-      },
-    ]),
-  );
+  const winners = winnersResult.data;
+  const cities = citiesResult.data;
+  const sliders = slidersResult.data;
+  const prioritySettingsRow = prioritySettingsResult.data;
+  const luckyDrawNotificationSettingsRow = luckyDrawResult.data;
+  const requirements = requirementsResult.data;
+  const exchanges = exchangesResult.data;
+  const fraudReports = fraudReportsResult.data;
+  const profileChangeRequestRows = profileChangeRequestsResult.data;
+  const profileChangeRequestsError = profileChangeRequestsResult.error;
+  const vehicleRows = vehiclesResult.data;
+  const vehiclesError = vehiclesResult.error;
+  const routeMinimumFareRows = routeMinimumFaresResult.data;
+  const routeMinimumFaresError = routeMinimumFaresResult.error;
+
+  const prioritySettings = {
+    matching_platinum_minutes:
+      prioritySettingsRow?.matching_platinum_minutes ?? 4,
+    all_platinum_minutes: prioritySettingsRow?.all_platinum_minutes ?? 4,
+    all_gold_minutes: prioritySettingsRow?.all_gold_minutes ?? 3,
+    updated_at: prioritySettingsRow?.updated_at ?? null,
+  };
+
+  const luckyDrawNotificationSettings = {
+    id: 1 as const,
+    enabled: luckyDrawNotificationSettingsRow?.enabled ?? true,
+    slots: Array.isArray(luckyDrawNotificationSettingsRow?.slots)
+      ? (luckyDrawNotificationSettingsRow.slots as string[])
+      : ["10:00", "14:00", "18:00", "21:00"],
+    updated_at: luckyDrawNotificationSettingsRow?.updated_at ?? null,
+  };
 
   const profileChangeRequests: ProfileChangeRequestRow[] = (
     profileChangeRequestRows ?? []
@@ -498,27 +542,6 @@ export default async function DashboardPage() {
     users: usersById.get(row.user_id) ?? null,
   }));
 
-  const {
-    data: vehicleRows,
-    error: vehiclesError,
-  } = await supabaseAdmin
-    .from("user_vehicles")
-    .select(
-      `
-      id,
-      user_id,
-      registration_number,
-      normalized_registration_number,
-      verification_status,
-      rejection_reason,
-      created_at,
-      reviewed_at,
-      reviewed_by
-    `,
-    )
-    .order("created_at", { ascending: false })
-    .limit(300);
-
   const vehicles: VehicleVerificationRow[] = (vehicleRows ?? []).map((row) => ({
     id: row.id,
     user_id: row.user_id,
@@ -531,27 +554,6 @@ export default async function DashboardPage() {
     reviewed_by: row.reviewed_by,
     users: usersById.get(row.user_id) ?? null,
   }));
-
-  const {
-    data: routeMinimumFareRows,
-    error: routeMinimumFaresError,
-  } = await supabaseAdmin
-    .from("route_minimum_fares")
-    .select(
-      `
-      id,
-      from_city,
-      from_state,
-      to_city,
-      to_state,
-      minimum_fare,
-      is_active,
-      created_at,
-      updated_at
-    `,
-    )
-    .order("updated_at", { ascending: false })
-    .limit(500);
 
   const routeMinimumFares: RouteMinimumFareRow[] = (
     routeMinimumFareRows ?? []
@@ -568,8 +570,13 @@ export default async function DashboardPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
+    <div className="min-h-screen bg-[var(--admin-bg,#f1f5f9)]">
+      <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+        <Suspense
+          fallback={
+            <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+          }
+        >
         <DashboardTabs
           totalUsers={allUsers.length}
           membership={membership}
@@ -599,6 +606,7 @@ export default async function DashboardPage() {
           vehicles={vehicles}
           routeMinimumFares={routeMinimumFares}
         />
+        </Suspense>
       </main>
     </div>
   );
