@@ -270,9 +270,12 @@ export function AdminNavIcon({
 
   return (
     <span
-      className={`admin-nav-icon flex shrink-0 items-center justify-center self-start rounded-lg sm:self-center ${
-        isActive ? "bg-white/20 text-white" : `${config.bgClass} ${config.colorClass}`
+      className={`admin-nav-icon flex shrink-0 items-center justify-center rounded-md ${
+        isActive
+          ? "bg-white/15 text-white"
+          : "bg-[var(--admin-surface-muted)] text-[var(--admin-text-secondary)]"
       }`}
+      title={tabKey}
     >
       {config.icon}
     </span>

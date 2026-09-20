@@ -570,8 +570,8 @@ export default async function DashboardPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-[var(--admin-bg,#f1f5f9)]">
-      <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className="min-h-screen">
+      <main className="mx-auto w-full max-w-[1480px] px-3 py-4 sm:px-5 sm:py-6 lg:px-6">
         <Suspense
           fallback={
             <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />

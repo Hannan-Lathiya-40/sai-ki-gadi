@@ -16,6 +16,10 @@ import {
   SimpleBarChart,
   SimpleDonutChart,
 } from "@/components/admin/ui/simple-charts";
+import { PageHeader } from "@/components/admin/ui/page-header";
+import { AdminButton } from "@/components/admin/ui/button";
+import { StatusBadge } from "@/components/admin/ui/badge";
+import { openAdminCommandPalette } from "@/components/admin/command-palette";
 
 import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
 import { InAppAnnouncementsAdminPanel } from "./components/in-app-announcements-admin-panel";
@@ -366,10 +370,12 @@ function AdminNavCard({
   item,
   isActive,
   onSelect,
+  collapsed,
 }: {
   item: NavTabItem;
   isActive: boolean;
   onSelect: (key: TabKey) => void;
+  collapsed?: boolean;
 }) {
   const showCount = item.count !== undefined;
   const isUrgent =
@@ -379,37 +385,25 @@ function AdminNavCard({
     <button
       type="button"
       onClick={() => onSelect(item.key)}
-      className={`admin-nav-card flex h-auto min-h-14 w-full min-w-0 items-start gap-2 overflow-visible whitespace-normal rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.98] sm:items-center sm:px-3.5 sm:py-2.5 ${
-        isActive
-          ? "border-indigo-600 bg-indigo-600 text-white shadow-sm"
-          : isUrgent
-            ? "border-amber-300 bg-amber-50 text-slate-900 hover:border-amber-400 hover:bg-amber-100"
-            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm"
+      title={collapsed ? item.label : undefined}
+      className={`admin-nav-item ${isActive ? "is-active" : ""} ${
+        isUrgent ? "is-urgent" : ""
       }`}
     >
       <AdminNavIcon tabKey={item.key} isActive={isActive} />
-      <span
-        className={`admin-nav-card-label min-w-0 flex-1 font-semibold ${
-          isActive ? "text-white" : "text-slate-900"
-        }`}
-      >
-        {item.label}
-      </span>
+      <span className="admin-nav-card-label">{item.label}</span>
       {showCount ? (
-        <span
-          className={`admin-nav-card-count shrink-0 self-start rounded-full px-1.5 py-0.5 font-bold tabular-nums sm:self-center sm:px-2 ${
-            isActive
-              ? "bg-indigo-500 text-white"
-              : isUrgent
-                ? "bg-amber-200 text-amber-900"
-                : "bg-slate-100 text-slate-600"
-          }`}
-        >
-          {item.count}
-        </span>
+        <span className="admin-nav-card-count">{item.count}</span>
       ) : null}
     </button>
   );
+}
+
+function greetingForNow(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 }
 
 type BirthdaySortKey = "dob_oldest" | "dob_newest";
@@ -488,6 +482,7 @@ export function DashboardTabs({
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [navOpen, setNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [profileChangeFilter, setProfileChangeFilter] = useState<
     "pending" | "approved" | "rejected" | "all"
   >("pending");
@@ -1387,18 +1382,119 @@ export function DashboardTabs({
       { label: "Regular", value: membership.regular, color: "#64748b" },
       { label: "Silver", value: membership.silver, color: "#94a3b8" },
       { label: "Gold", value: membership.gold, color: "#ca8a04" },
-      { label: "Platinum", value: membership.platinum, color: "#7c3aed" },
+      { label: "Platinum", value: membership.platinum, color: "#1d4ed8" },
     ],
     [membership],
   );
 
   const verificationSlices = useMemo(
     () => [
-      { label: "Verified", value: verifiedCount, color: "#059669" },
-      { label: "Unverified", value: unverifiedCount, color: "#d97706" },
+      { label: "Verified", value: verifiedCount, color: "#047857" },
+      { label: "Unverified", value: unverifiedCount, color: "#b45309" },
     ],
     [unverifiedCount, verifiedCount],
   );
+
+  const recentActivity = useMemo(() => {
+    type ActivityItem = {
+      id: string;
+      title: string;
+      meta: string;
+      at: number;
+      tone: "neutral" | "success" | "warning" | "danger";
+    };
+    const items: ActivityItem[] = [];
+
+    for (const user of [...(users ?? [])]
+      .filter((u) => u.created_at)
+      .sort(
+        (a, b) =>
+          new Date(b.created_at ?? 0).getTime() -
+          new Date(a.created_at ?? 0).getTime(),
+      )
+      .slice(0, 5)) {
+      const name =
+        `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() ||
+        user.phone ||
+        "New user";
+      items.push({
+        id: `user-${user.id}`,
+        title: `New user · ${name}`,
+        meta: "Registration",
+        at: new Date(user.created_at ?? 0).getTime(),
+        tone: "neutral",
+      });
+    }
+
+    for (const req of [...(requirements ?? [])].slice(0, 5)) {
+      const created = (req as { created_at?: string }).created_at;
+      if (!created) continue;
+      items.push({
+        id: `req-${(req as { id?: string }).id ?? created}`,
+        title: "New requirement posted",
+        meta: "Requirements",
+        at: new Date(created).getTime(),
+        tone: "success",
+      });
+    }
+
+    for (const report of [...(fraudReports ?? [])].slice(0, 4)) {
+      const created = (report as { created_at?: string }).created_at;
+      if (!created) continue;
+      items.push({
+        id: `fraud-${(report as { id?: string }).id ?? created}`,
+        title: "Fraud report received",
+        meta: "Fraud",
+        at: new Date(created).getTime(),
+        tone: "danger",
+      });
+    }
+
+    return items
+      .filter((i) => Number.isFinite(i.at))
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 8);
+  }, [fraudReports, requirements, users]);
+
+  const pendingActions = useMemo(
+    () =>
+      [
+        {
+          key: "pending" as TabKey,
+          label: "Review verifications",
+          count: pendingCount,
+        },
+        {
+          key: "car-verification" as TabKey,
+          label: "Car verifications",
+          count: pendingVehicleCount,
+        },
+        {
+          key: "profile-changes" as TabKey,
+          label: "Profile changes",
+          count: pendingProfileChangeCount,
+        },
+        {
+          key: "fraud-reports" as TabKey,
+          label: "Fraud reports",
+          count: fraudReports?.length || 0,
+        },
+      ].filter((a) => a.count > 0),
+    [
+      fraudReports?.length,
+      pendingCount,
+      pendingProfileChangeCount,
+      pendingVehicleCount,
+    ],
+  );
+
+  const formatRelativeShort = (ts: number) => {
+    const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (diffSec < 60) return "Just now";
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  };
 
   const requirementsByRideType = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1477,7 +1573,7 @@ export function DashboardTabs({
         ],
       },
       {
-        title: "Membership & Business",
+        title: "Business",
         items: [
           { key: "priority-settings" as TabKey, label: "Priority Timeline" },
           {
@@ -2238,31 +2334,31 @@ export function DashboardTabs({
   return (
     <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
       {successMessage ? (
-        <div className="fixed left-4 right-4 top-16 z-50 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 shadow-lg lg:left-auto lg:right-6 lg:w-96">
+        <div className="admin-toast fixed left-4 right-4 top-[calc(var(--admin-header-h)+0.75rem)] z-50 border-[var(--admin-success-border)] bg-[var(--admin-success-soft)] px-4 py-3 text-sm font-semibold text-[var(--admin-success)] lg:left-auto lg:right-6 lg:w-96">
           {successMessage}
         </div>
       ) : null}
 
       {errorMessage ? (
-        <div className="fixed left-4 right-4 top-16 z-50 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-lg lg:left-auto lg:right-6 lg:w-96">
+        <div className="admin-toast fixed left-4 right-4 top-[calc(var(--admin-header-h)+0.75rem)] z-50 border-[var(--admin-danger-border)] bg-[var(--admin-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--admin-danger)] lg:left-auto lg:right-6 lg:w-96">
           {errorMessage}
         </div>
       ) : null}
 
       <button
         type="button"
-        className="flex h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 lg:hidden"
+        className="admin-btn admin-btn-secondary lg:hidden"
         onClick={() => setNavOpen((v) => !v)}
         aria-expanded={navOpen}
         aria-controls="admin-side-nav"
       >
-        {navOpen ? "Close menu" : "Open menu"}
+        {navOpen ? "Close menu" : "Modules"}
       </button>
 
       {navOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
+          className="admin-overlay fixed inset-0 z-30 lg:hidden"
           aria-label="Close navigation overlay"
           onClick={() => setNavOpen(false)}
         />
@@ -2270,39 +2366,47 @@ export function DashboardTabs({
 
       <aside
         id="admin-side-nav"
-        className={`fixed inset-y-0 left-0 z-40 w-72 overflow-y-auto border-r border-slate-200 bg-white p-4 shadow-xl transition-transform lg:static lg:z-0 lg:w-64 lg:shrink-0 lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
-          navOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
+        className={`admin-sidebar admin-card fixed inset-y-0 left-0 z-40 overflow-y-auto p-3 shadow-[var(--admin-shadow-lg)] transition-transform lg:sticky lg:top-[calc(var(--admin-header-h)+0.75rem)] lg:z-0 lg:max-h-[calc(100vh-var(--admin-header-h)-1.5rem)] lg:shrink-0 lg:translate-x-0 lg:self-start lg:shadow-[var(--admin-shadow-xs)] ${
+          sidebarCollapsed ? "is-collapsed lg:w-[var(--admin-sidebar-w-collapsed)]" : "lg:w-[var(--admin-sidebar-w)]"
+        } w-72 ${navOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
       >
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Navigation
+        <div className="mb-3 flex items-center justify-between gap-2 px-1">
+          <div className="admin-sidebar-brand-text min-w-0">
+            <p className="admin-eyebrow">Sai Ki Gadi</p>
+            <p className="truncate text-sm font-semibold text-[var(--admin-text)]">
+              Control center
             </p>
-            <p className="text-sm font-bold text-slate-900">Control center</p>
           </div>
           <button
             type="button"
-            onClick={logout}
-            className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            className="admin-btn admin-btn-ghost admin-btn-icon hidden lg:inline-flex"
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setSidebarCollapsed((v) => !v)}
           >
-            Log out
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              {sidebarCollapsed ? (
+                <path d="m9 18 6-6-6-6" />
+              ) : (
+                <path d="m15 18-6-6 6-6" />
+              )}
+            </svg>
           </button>
         </div>
 
         <nav className="space-y-4" aria-label="Admin modules">
           {navGroups.map((group) => (
             <div key={group.title}>
-              <h2 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <h2 className="admin-sidebar-group-title mb-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--admin-text-faint)]">
                 {group.title}
               </h2>
-              <ul className="space-y-1">
+              <ul className="space-y-0.5">
                 {group.items.map((item) => (
                   <li key={item.key}>
                     <AdminNavCard
                       item={item}
                       isActive={activeTab === item.key}
                       onSelect={selectTab}
+                      collapsed={sidebarCollapsed}
                     />
                   </li>
                 ))}
@@ -2310,29 +2414,61 @@ export function DashboardTabs({
             </div>
           ))}
         </nav>
+
+        <div className="mt-4 border-t border-[var(--admin-border)] pt-3">
+          <button
+            type="button"
+            onClick={logout}
+            className="admin-nav-item w-full text-[var(--admin-danger)]"
+            title="Log out"
+          >
+            <span className="admin-nav-icon flex items-center justify-center rounded-md bg-[var(--admin-danger-soft)] text-[var(--admin-danger)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <path d="m16 17 5-5-5-5" />
+                <path d="M21 12H9" />
+              </svg>
+            </span>
+            <span className="admin-sidebar-logout-label admin-nav-card-label">
+              Log out
+            </span>
+          </button>
+        </div>
       </aside>
 
       <div className="min-w-0 flex-1">
-      <header className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Admin Dashboard
-            </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:mt-1.5 sm:text-3xl">
-              Sai ki Gadi Control Center
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Operational overview, verification queues, and content tools.
-            </p>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="SAI KI GADI • ADMIN"
+        title={`${greetingForNow()}, Admin`}
+        description="Operational overview for verification, requirements, membership, and content."
+        actions={
+          <>
+            <AdminButton
+              variant="secondary"
+              onClick={() => openAdminCommandPalette()}
+            >
+              Search ⌘K
+            </AdminButton>
+            <AdminButton
+              variant="secondary"
+              onClick={() => router.refresh()}
+            >
+              Refresh
+            </AdminButton>
+            <AdminButton
+              variant="primary"
+              onClick={() => selectTab("pending")}
+            >
+              Review queue
+            </AdminButton>
+          </>
+        }
+      />
 
       {showRlsHint ? (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="mb-5 rounded-[var(--admin-radius)] border border-[var(--admin-warning-border)] bg-[var(--admin-warning-soft)] px-4 py-3 text-sm text-[var(--admin-warning)]">
           <p className="font-semibold">Admin cannot bypass RLS</p>
-          <p className="mt-1">
+          <p className="mt-1 text-[var(--admin-text-secondary)]">
             Profile Change Requests stay empty until a real{" "}
             <strong>server-only</strong> service-role/secret key is set for the
             same Supabase project this Admin Panel is connected to.
@@ -2342,7 +2478,7 @@ export function DashboardTabs({
               Detected issue: <code>{serviceRoleIssue}</code>
             </p>
           ) : null}
-          <p className="mt-2">
+          <p className="mt-2 text-[var(--admin-text-secondary)]">
             Connected host: <code>{supabaseHost || "unknown"}</code>. In
             Supabase Dashboard for that project → Settings → API Keys, copy the{" "}
             <strong>secret</strong> / service_role key into{" "}
@@ -2354,7 +2490,7 @@ export function DashboardTabs({
       ) : null}
 
       {profileChangeRequestsError ? (
-        <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <div className="mb-5 rounded-[var(--admin-radius)] border border-[var(--admin-danger-border)] bg-[var(--admin-danger-soft)] px-4 py-3 text-sm text-[var(--admin-danger)]">
           Failed to load profile change requests: {profileChangeRequestsError}
         </div>
       ) : null}
@@ -2362,7 +2498,7 @@ export function DashboardTabs({
       {activeTab === "overview" ? (
         <div className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {overviewCards.map((card) => (
+            {overviewCards.slice(0, 8).map((card) => (
               <KpiCard
                 key={card.label}
                 title={card.label}
@@ -2374,34 +2510,160 @@ export function DashboardTabs({
                     ? registrationsLast30.trendLabel
                     : null
                 }
+                sparkline={
+                  card.label === "Total users"
+                    ? registrationTrend.map((p) => p.value)
+                    : undefined
+                }
                 onClick={() => selectTab(card.tab)}
               />
             ))}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <SimpleBarChart
-              title="User registrations (last 14 days)"
-              points={registrationTrend}
-            />
-            <SimpleDonutChart
-              title="Membership distribution"
-              slices={membershipSlices}
-            />
-            <SimpleDonutChart
-              title="Verified vs unverified"
-              slices={verificationSlices}
-            />
-            <SimpleBarChart
-              title="Requirements by ride / car type"
-              points={requirementsByRideType}
-              emptyLabel="No requirements in the current loaded set"
-            />
+          <div className="grid gap-4 xl:grid-cols-5">
+            <div className="xl:col-span-3">
+              <SimpleBarChart
+                title="User growth · last 14 days"
+                points={registrationTrend}
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <SimpleDonutChart
+                title="Verification funnel"
+                slices={verificationSlices}
+              />
+            </div>
           </div>
 
-          <p className="text-xs text-slate-500">
+          <div className="grid gap-4 xl:grid-cols-5">
+            <div className="xl:col-span-3">
+              <SimpleBarChart
+                title="Requirements by ride / car type"
+                points={requirementsByRideType}
+                emptyLabel="No requirements in the current loaded set"
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <SimpleDonutChart
+                title="Membership distribution"
+                slices={membershipSlices}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="admin-card p-4 sm:p-5">
+              <h3 className="admin-section-title mb-3">Recent activity</h3>
+              {recentActivity.length === 0 ? (
+                <p className="admin-caption py-8 text-center">
+                  No recent operational events in the loaded dataset.
+                </p>
+              ) : (
+                <ul className="space-y-0">
+                  {recentActivity.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex items-start gap-3 border-b border-[var(--admin-border)] py-2.5 last:border-0"
+                    >
+                      <span
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                          item.tone === "danger"
+                            ? "bg-[var(--admin-danger)]"
+                            : item.tone === "success"
+                              ? "bg-[var(--admin-success)]"
+                              : item.tone === "warning"
+                                ? "bg-[var(--admin-warning)]"
+                                : "bg-[var(--admin-accent)]"
+                        }`}
+                        aria-hidden
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-[var(--admin-text)]">
+                          {item.title}
+                        </p>
+                        <p className="admin-meta mt-0.5">
+                          {item.meta} · {formatRelativeShort(item.at)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <div className="space-y-4">
+              <section className="admin-card p-4 sm:p-5">
+                <h3 className="admin-section-title mb-3">Pending actions</h3>
+                {pendingActions.length === 0 ? (
+                  <p className="admin-caption py-6 text-center">
+                    Everything looks clear right now.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {pendingActions.map((action) => (
+                      <li key={action.key}>
+                        <button
+                          type="button"
+                          onClick={() => selectTab(action.key)}
+                          className="flex w-full items-center justify-between rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] px-3 py-2.5 text-left transition hover:bg-[var(--admin-surface-hover)]"
+                        >
+                          <span className="text-sm font-medium text-[var(--admin-text)]">
+                            {action.label}
+                          </span>
+                          <StatusBadge
+                            status="pending"
+                            label={String(action.count)}
+                          />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className="admin-card p-4 sm:p-5">
+                <h3 className="admin-section-title mb-3">Quick actions</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ["pending", "Verification"],
+                      ["users", "Users"],
+                      ["requirements", "Requirements"],
+                      ["fraud-reports", "Fraud"],
+                      ["priority-settings", "Priority"],
+                      ["in-app-popups", "Pop-ups"],
+                    ] as [TabKey, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => selectTab(key)}
+                      className="admin-btn admin-btn-secondary h-9 justify-start px-3 text-xs"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {overviewCards.slice(8).map((card) => (
+              <KpiCard
+                key={card.label}
+                title={card.label}
+                value={card.value}
+                subtitle={card.subtitle}
+                status={card.status}
+                onClick={() => selectTab(card.tab)}
+              />
+            ))}
+          </div>
+
+          <p className="admin-caption">
             Trends use real <code>users.created_at</code> values. Percentage
-            change is shown only when a prior 30-day baseline exists.
+            change appears only when a prior 30-day baseline exists.
           </p>
         </div>
       ) : activeTab === "pending" ? (
@@ -2410,14 +2672,14 @@ export function DashboardTabs({
             <button
               type="button"
               onClick={exportPendingUsers}
-              className="h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+              className="admin-btn admin-btn-success"
             >
               Export to Excel
             </button>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -2468,9 +2730,10 @@ export function DashboardTabs({
                           {user.email}
                         </td>
                         <td className="px-4 py-3 text-slate-600">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                            {formatMembership(user.membershipType)}
-                          </span>
+                          <StatusBadge
+                            status={user.membershipType}
+                            label={formatMembership(user.membershipType)}
+                          />
                         </td>
                       </tr>
                     ))
@@ -2481,9 +2744,9 @@ export function DashboardTabs({
           </div>
         </>
       ) : activeTab === "rejected-partial" ? (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="admin-table-wrap">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <table className="admin-table">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -2530,9 +2793,10 @@ export function DashboardTabs({
                       <td className="px-4 py-3 text-slate-600">{user.phone}</td>
                       <td className="px-4 py-3 text-slate-600">{user.email}</td>
                       <td className="px-4 py-3 text-slate-600">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {formatMembership(user.membershipType)}
-                        </span>
+                        <StatusBadge
+                          status={user.membershipType}
+                          label={formatMembership(user.membershipType)}
+                        />
                       </td>
                     </tr>
                   ))
@@ -2542,9 +2806,9 @@ export function DashboardTabs({
           </div>
         </div>
       ) : activeTab === "not-started" ? (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="admin-table-wrap">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <table className="admin-table">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -2585,9 +2849,10 @@ export function DashboardTabs({
                       <td className="px-4 py-3 text-slate-600">{user.phone}</td>
                       <td className="px-4 py-3 text-slate-600">{user.email}</td>
                       <td className="px-4 py-3 text-slate-600">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {formatMembership(user.membershipType)}
-                        </span>
+                        <StatusBadge
+                          status={user.membershipType}
+                          label={formatMembership(user.membershipType)}
+                        />
                       </td>
                     </tr>
                   ))
@@ -2615,9 +2880,9 @@ export function DashboardTabs({
             </button>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -2723,7 +2988,7 @@ export function DashboardTabs({
             <button
               type="button"
               onClick={exportActiveUsers}
-              className="h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+              className="admin-btn admin-btn-success"
             >
               Export to Excel
             </button>
@@ -2815,9 +3080,9 @@ export function DashboardTabs({
               </button>
             </div>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -3267,9 +3532,9 @@ export function DashboardTabs({
               : ""}
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -3510,8 +3775,8 @@ export function DashboardTabs({
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"></div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap"></div>
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
               <table className="min-w-full table-auto">
                 <thead className="bg-slate-100">
@@ -3738,7 +4003,7 @@ export function DashboardTabs({
               </button>
             </div>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
               <table className="min-w-full table-auto">
                 <thead className="bg-slate-100">
@@ -3855,9 +4120,9 @@ export function DashboardTabs({
             </button>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-6 py-4 text-left font-bold text-slate-800">
@@ -3970,9 +4235,9 @@ export function DashboardTabs({
             </button>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -4252,9 +4517,9 @@ export function DashboardTabs({
               ))}
             </div>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -4360,9 +4625,9 @@ export function DashboardTabs({
               ))}
             </div>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -4459,9 +4724,9 @@ export function DashboardTabs({
               Add Rule
             </button>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -4701,9 +4966,9 @@ export function DashboardTabs({
               {editingWinnerId ? "Edit Winner" : "Add Winner"}{" "}
             </button>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="admin-table-wrap">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <table className="admin-table">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">

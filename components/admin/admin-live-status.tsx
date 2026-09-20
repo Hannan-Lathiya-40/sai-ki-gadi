@@ -6,10 +6,6 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type LiveStatus = "connecting" | "live" | "offline";
 
-/**
- * Lightweight realtime health indicator based on admin_notifications channel.
- * Does not reload the page; only reflects subscription status.
- */
 export function AdminLiveStatus() {
   const [status, setStatus] = useState<LiveStatus>(() =>
     typeof window !== "undefined" && !getSupabaseBrowserClient()
@@ -65,14 +61,16 @@ export function AdminLiveStatus() {
 
   return (
     <div
-      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700"
+      className="inline-flex h-9 items-center gap-2 rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-white px-2.5 text-xs font-medium text-[var(--admin-text-secondary)]"
       title={lastEventAt ? `Last event ${lastEventAt}` : "Realtime status"}
     >
-      <span className={`h-2 w-2 rounded-full ${color}`} aria-hidden />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${color} ${
+          status === "live" ? "animate-pulse" : ""
+        }`}
+        aria-hidden
+      />
       <span>{label}</span>
-      {lastEventAt ? (
-        <span className="hidden text-slate-400 sm:inline">{lastEventAt}</span>
-      ) : null}
     </div>
   );
 }

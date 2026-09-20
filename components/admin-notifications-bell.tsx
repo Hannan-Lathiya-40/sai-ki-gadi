@@ -47,6 +47,7 @@ type ToastState = {
 
 export function AdminNotificationsBell() {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<"unread" | "all">("all");
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<ToastState>(null);
@@ -55,6 +56,9 @@ export function AdminNotificationsBell() {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const visible = notifications.filter((n) =>
+    filter === "unread" ? !n.is_read : true,
+  );
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -85,7 +89,6 @@ export function AdminNotificationsBell() {
     void loadNotifications();
   }, [loadNotifications]);
 
-  // Realtime: new rows appear without refresh.
   useEffect(() => {
     const client = getSupabaseBrowserClient();
     if (!client) return;
@@ -175,61 +178,106 @@ export function AdminNotificationsBell() {
         type="button"
         aria-label="Notifications"
         onClick={() => setOpen((v) => !v)}
-        className="relative rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        className="admin-btn admin-btn-secondary admin-btn-icon relative"
       >
-        <span aria-hidden>🔔</span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden
+        >
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
         {unreadCount > 0 ? (
-          <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+          <span className="absolute -right-1 -top-1 inline-flex min-w-[1.125rem] items-center justify-center rounded-full bg-[var(--admin-danger)] px-1 py-0.5 text-[10px] font-bold leading-none text-white">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         ) : null}
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <p className="text-sm font-bold text-slate-900">Notifications</p>
+        <div className="absolute right-0 z-50 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[var(--admin-radius-lg)] border border-[var(--admin-border)] bg-white shadow-[var(--admin-shadow-lg)]">
+          <div className="flex items-center justify-between border-b border-[var(--admin-border)] px-4 py-3">
+            <p className="text-sm font-semibold text-[var(--admin-text)]">
+              Notifications
+            </p>
             {unreadCount > 0 ? (
               <button
                 type="button"
                 onClick={() => void markRead(undefined, true)}
-                className="text-xs font-semibold text-indigo-600 hover:underline"
+                className="text-xs font-semibold text-[var(--admin-accent)] hover:underline"
               >
                 Mark all read
               </button>
             ) : null}
           </div>
+          <div className="flex gap-1 border-b border-[var(--admin-border)] px-2 py-2">
+            {(["all", "unread"] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold capitalize ${
+                  filter === key
+                    ? "bg-[var(--admin-primary)] text-white"
+                    : "text-[var(--admin-text-muted)] hover:bg-[var(--admin-surface-hover)]"
+                }`}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
           <div className="max-h-80 overflow-y-auto">
             {loading ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">
-                Loading…
-              </p>
-            ) : notifications.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">
-                No notifications yet.
+              <div className="space-y-2 p-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="admin-skeleton h-14 w-full" />
+                ))}
+              </div>
+            ) : visible.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-[var(--admin-text-muted)]">
+                {filter === "unread"
+                  ? "You're all caught up."
+                  : "No notifications yet."}
               </p>
             ) : (
-              <ul className="divide-y divide-slate-100">
-                {notifications.map((n) => (
-                  <li key={n.id}>
+              <ul>
+                {visible.map((n) => (
+                  <li key={n.id} className="border-b border-[var(--admin-border)] last:border-0">
                     <button
                       type="button"
-                      className={`w-full px-4 py-3 text-left hover:bg-slate-50 ${
-                        n.is_read ? "bg-white" : "bg-indigo-50/60"
+                      className={`w-full px-4 py-3 text-left transition hover:bg-[var(--admin-surface-hover)] ${
+                        n.is_read ? "bg-white" : "bg-[var(--admin-accent-soft)]/50"
                       }`}
                       onClick={() => {
                         if (!n.is_read) void markRead([n.id]);
                       }}
                     >
-                      <p className="text-sm font-semibold text-slate-900">
-                        {n.title}
-                      </p>
-                      <p className="mt-0.5 text-sm text-slate-600">
-                        {n.message}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {formatRelative(n.created_at)}
-                      </p>
+                      <div className="flex items-start gap-2.5">
+                        <span
+                          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                            n.is_read
+                              ? "bg-[var(--admin-border-strong)]"
+                              : "bg-[var(--admin-accent)]"
+                          }`}
+                          aria-hidden
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[var(--admin-text)]">
+                            {n.title}
+                          </p>
+                          <p className="mt-0.5 text-sm text-[var(--admin-text-secondary)]">
+                            {n.message}
+                          </p>
+                          <p className="admin-meta mt-1">
+                            {formatRelative(n.created_at)}
+                          </p>
+                        </div>
+                      </div>
                     </button>
                   </li>
                 ))}
@@ -240,14 +288,16 @@ export function AdminNotificationsBell() {
       ) : null}
 
       {toast ? (
-        <div className="fixed right-4 top-16 z-[60] w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-indigo-200 bg-white p-4 shadow-2xl sm:right-6">
-          <p className="text-sm font-bold text-slate-900">
-            🔔 {toast.title}
+        <div className="admin-toast fixed right-4 top-[calc(var(--admin-header-h)+0.75rem)] z-[60] w-[22rem] max-w-[calc(100vw-2rem)] p-4 sm:right-6">
+          <p className="text-sm font-semibold text-[var(--admin-text)]">
+            {toast.title}
           </p>
-          <p className="mt-1 text-sm text-slate-600">{toast.message}</p>
+          <p className="mt-1 text-sm text-[var(--admin-text-secondary)]">
+            {toast.message}
+          </p>
           <button
             type="button"
-            className="mt-3 text-xs font-semibold text-indigo-600"
+            className="mt-3 text-xs font-semibold text-[var(--admin-accent)]"
             onClick={() => setToast(null)}
           >
             Dismiss

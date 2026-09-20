@@ -35,7 +35,7 @@ export function AdminFontSizeControl() {
 
   return (
     <div
-      className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+      className="flex h-9 items-center gap-0.5 rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-0.5"
       role="group"
       aria-label="Font size accessibility controls"
     >
@@ -50,10 +50,10 @@ export function AdminFontSizeControl() {
             aria-label={option.ariaLabel}
             aria-pressed={isActive}
             title={option.ariaLabel}
-            className={`min-h-8 min-w-8 rounded-md px-1.5 text-[11px] font-bold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 sm:min-w-9 sm:px-2 sm:text-xs ${
+            className={`min-h-8 min-w-8 rounded-[5px] px-1.5 text-[11px] font-bold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--admin-accent)] focus-visible:ring-offset-1 sm:min-w-9 sm:px-2 sm:text-xs ${
               isActive
-                ? "bg-indigo-600 text-white shadow-sm"
-                : "bg-transparent text-slate-600 hover:bg-white hover:text-slate-900"
+                ? "bg-[var(--admin-primary)] text-white shadow-[var(--admin-shadow-xs)]"
+                : "bg-transparent text-[var(--admin-text-muted)] hover:bg-white hover:text-[var(--admin-text)]"
             }`}
           >
             {option.label}

@@ -1,11 +1,9 @@
-import { AdminFontSizeControl } from "@/components/admin-font-size-control";
-import { AdminLiveStatus } from "@/components/admin/admin-live-status";
-import { AdminNotificationsBell } from "@/components/admin-notifications-bell";
+import { AdminCommandPalette } from "@/components/admin/command-palette";
+import { AdminTopHeader } from "@/components/admin/admin-top-header";
 import { ADMIN_FONT_SIZE_BOOTSTRAP_SCRIPT } from "@/lib/admin-font-size";
 
 /**
- * Shared dashboard chrome so the notification bell works on the main
- * dashboard and all detail routes (verification, cars, users, etc.).
+ * Shared dashboard chrome for main dashboard and detail routes.
  */
 export default function DashboardLayout({
   children,
@@ -13,18 +11,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative min-h-screen bg-slate-100">
+    <div className="admin-shell relative">
       <script
         dangerouslySetInnerHTML={{ __html: ADMIN_FONT_SIZE_BOOTSTRAP_SCRIPT }}
       />
-      <div className="sticky top-0 z-40 flex h-12 items-center justify-end gap-2 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:gap-3 sm:px-6">
-        <p className="mr-auto truncate text-xs font-semibold uppercase tracking-[0.18em] text-slate-800">
-          Sai ki Gadi Admin 2.0
-        </p>
-        <AdminLiveStatus />
-        <AdminFontSizeControl />
-        <AdminNotificationsBell />
-      </div>
+      <AdminTopHeader />
+      <AdminCommandPalette />
       {children}
     </div>
   );

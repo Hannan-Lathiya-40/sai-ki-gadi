@@ -37,10 +37,7 @@ export function LoginForm() {
   return (
     <form className="flex flex-col gap-5" onSubmit={onSubmit}>
       <div>
-        <label
-          htmlFor="login-id"
-          className="mb-1.5 block text-sm font-medium text-slate-700"
-        >
+        <label htmlFor="login-id" className="admin-label">
           Login ID
         </label>
         <input
@@ -51,14 +48,11 @@ export function LoginForm() {
           value={loginId}
           onChange={(e) => setLoginId(e.target.value)}
           placeholder="Username"
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-slate-900 outline-none ring-indigo-500/0 transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/15"
+          className="admin-input"
         />
       </div>
       <div>
-        <label
-          htmlFor="password"
-          className="mb-1.5 block text-sm font-medium text-slate-700"
-        >
+        <label htmlFor="password" className="admin-label">
           Password
         </label>
         <input
@@ -69,12 +63,12 @@ export function LoginForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter your password"
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-slate-900 outline-none ring-indigo-500/0 transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/15"
+          className="admin-input"
         />
       </div>
 
       {error ? (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <p className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-danger-border)] bg-[var(--admin-danger-soft)] px-3 py-2 text-sm text-[var(--admin-danger)]">
           {error}
         </p>
       ) : null}
@@ -82,9 +76,19 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={isLoading}
-        className="mt-2 w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-600/25 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-70"
+        className="admin-btn admin-btn-primary mt-1 h-11 w-full"
       >
-        {isLoading ? "Signing in..." : "Continue"}
+        {isLoading ? (
+          <>
+            <span
+              className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"
+              aria-hidden
+            />
+            Signing in…
+          </>
+        ) : (
+          "Continue"
+        )}
       </button>
     </form>
   );
