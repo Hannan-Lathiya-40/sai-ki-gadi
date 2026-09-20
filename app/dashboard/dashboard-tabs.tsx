@@ -2,7 +2,7 @@
 
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { exportToExcel } from "@/lib/export-excel";
 import { formatDateTime } from "@/lib/format-datetime";
@@ -11,6 +11,11 @@ import {
   readUploadResponse,
   validateMediaFileSize,
 } from "@/lib/admin-upload";
+import { KpiCard } from "@/components/admin/ui/kpi-card";
+import {
+  SimpleBarChart,
+  SimpleDonutChart,
+} from "@/components/admin/ui/simple-charts";
 
 import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
 import { InAppAnnouncementsAdminPanel } from "./components/in-app-announcements-admin-panel";
@@ -482,12 +487,26 @@ export function DashboardTabs({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [navOpen, setNavOpen] = useState(false);
   const [profileChangeFilter, setProfileChangeFilter] = useState<
     "pending" | "approved" | "rejected" | "all"
   >("pending");
   const [vehicleFilter, setVehicleFilter] = useState<
     "pending" | "approved" | "rejected" | "all"
   >("pending");
+
+  const selectTab = useCallback(
+    (key: TabKey) => {
+      setActiveTab(key);
+      setNavOpen(false);
+      const params = new URLSearchParams(searchParams.toString());
+      if (key === "overview") params.delete("tab");
+      else params.set("tab", key);
+      const qs = params.toString();
+      router.replace(qs ? `/dashboard?${qs}` : "/dashboard", { scroll: false });
+    },
+    [router, searchParams],
+  );
 
   useEffect(() => {
     const tab = searchParams.get("tab") as TabKey | null;
@@ -552,106 +571,6 @@ export function DashboardTabs({
   );
   const rejectedPartialCount = rejectedPartialUsers.length;
   const notStartedCount = notStartedVerificationUsers.length;
-
-  const quickAccessTabs = useMemo<NavTabItem[]>(
-    () => [
-      { key: "overview", label: "Analytics" },
-      {
-        key: "pending",
-        label: "Pending Verification",
-        count: pendingCount,
-        highlightIfCountAboveZero: true,
-      },
-      {
-        key: "car-verification",
-        label: "Car Verification",
-        count: pendingVehicleCount,
-        highlightIfCountAboveZero: true,
-      },
-      { key: "users", label: "Users", count: users?.length || 0 },
-      {
-        key: "requirements",
-        label: "Requirements",
-        count: requirements?.length || 0,
-      },
-      {
-        key: "fraud-reports",
-        label: "Fraud Reports",
-        count: fraudReports?.length || 0,
-        highlightIfCountAboveZero: true,
-      },
-    ],
-    [
-      pendingCount,
-      pendingVehicleCount,
-      users?.length,
-      requirements?.length,
-      fraudReports?.length,
-    ],
-  );
-
-  const allFeatureTabs = useMemo<NavTabItem[]>(
-    () =>
-      [
-        { key: "about-us" as const, label: "About Us" },
-        { key: "birthday-date" as const, label: "Birthday Date" },
-        {
-          key: "cities" as const,
-          label: "Cities",
-          count: cities.length || 0,
-        },
-        {
-          key: "exchanges" as const,
-          label: "Exchanges",
-          count: exchanges?.length || 0,
-        },
-        { key: "in-app-popups" as const, label: "In-App Pop-ups" },
-        {
-          key: "not-started" as const,
-          label: "Not Started",
-          count: notStartedCount,
-        },
-        {
-          key: "priority-settings" as const,
-          label: "Priority Timeline",
-        },
-        {
-          key: "profile-changes" as const,
-          label: "Profile Changes",
-          count: pendingProfileChangeCount,
-        },
-        {
-          key: "rejected-partial" as const,
-          label: "Rejected/Partial",
-          count: rejectedPartialCount,
-        },
-        {
-          key: "minimum-fares" as const,
-          label: "Set Minimum Fare",
-          count: routeMinimumFares.length,
-        },
-        {
-          key: "sliders" as const,
-          label: "Sliders",
-          count: sliders?.length || 0,
-        },
-        {
-          key: "winners" as const,
-          label: "Winners",
-          count: winnerUser.length,
-        },
-      ].sort((a, b) => a.label.localeCompare(b.label)),
-    [
-      cities.length,
-      exchanges?.length,
-      notStartedCount,
-      pendingProfileChangeCount,
-      rejectedPartialCount,
-      routeMinimumFares.length,
-      sliders?.length,
-      winnerUser.length,
-    ],
-  );
 
   const [showWinnerModal, setShowWinnerModal] = useState(false);
 
@@ -1281,52 +1200,331 @@ export function DashboardTabs({
         label: "Total users",
         value: totalUsers,
         subtitle: "All signed-up accounts",
-        tab: "users",
-        accent: "border-slate-900 bg-slate-900 text-white shadow-slate-300/40",
+        tab: "users" as TabKey,
+        status: "default" as const,
       },
       {
         label: "Regular",
         value: membership.regular,
-        subtitle: "Regular Members",
-        tab: "users",
-        accent: "border-slate-200 bg-white text-slate-900",
+        subtitle: "Regular members",
+        tab: "users" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Silver",
+        value: membership.silver,
+        subtitle: "Silver members",
+        tab: "users" as TabKey,
+        status: "info" as const,
       },
       {
         label: "Gold",
         value: membership.gold,
-        subtitle: "Gold Members",
-        tab: "users",
-        accent: "border-yellow-100 bg-yellow-50 text-yellow-700",
+        subtitle: "Gold members",
+        tab: "users" as TabKey,
+        status: "warning" as const,
       },
       {
         label: "Platinum",
         value: membership.platinum,
-        subtitle: "Platinum Members",
-        tab: "users",
-        accent: "border-purple-100 bg-purple-50 text-purple-700",
+        subtitle: "Platinum / Diamond tier",
+        tab: "users" as TabKey,
+        status: "info" as const,
       },
       {
         label: "Verified",
         value: verifiedCount,
         subtitle: "Approved accounts",
-        tab: "pending",
-        accent: "border-emerald-100 bg-emerald-50 text-emerald-700",
+        tab: "pending" as TabKey,
+        status: "success" as const,
       },
       {
         label: "Unverified",
         value: unverifiedCount,
         subtitle: "Pending or incomplete",
-        tab: "not-started",
-        accent: "border-amber-100 bg-amber-50 text-amber-700",
+        tab: "not-started" as TabKey,
+        status: "warning" as const,
+      },
+      {
+        label: "Pending verification",
+        value: pendingCount,
+        subtitle: "Docs uploaded, awaiting review",
+        tab: "pending" as TabKey,
+        status: pendingCount > 0 ? ("danger" as const) : ("default" as const),
+      },
+      {
+        label: "Car verification",
+        value: pendingVehicleCount,
+        subtitle: "Vehicles awaiting review",
+        tab: "car-verification" as TabKey,
+        status:
+          pendingVehicleCount > 0 ? ("danger" as const) : ("default" as const),
+      },
+      {
+        label: "Requirements",
+        value: requirements?.length || 0,
+        subtitle: "Loaded recent requirements",
+        tab: "requirements" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Exchanges",
+        value: exchanges?.length || 0,
+        subtitle: "Loaded recent listings",
+        tab: "exchanges" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Fraud reports",
+        value: fraudReports?.length || 0,
+        subtitle: "Loaded recent reports",
+        tab: "fraud-reports" as TabKey,
+        status:
+          (fraudReports?.length || 0) > 0
+            ? ("danger" as const)
+            : ("default" as const),
+      },
+      {
+        label: "Profile changes",
+        value: pendingProfileChangeCount,
+        subtitle: "Pending change requests",
+        tab: "profile-changes" as TabKey,
+        status:
+          pendingProfileChangeCount > 0
+            ? ("warning" as const)
+            : ("default" as const),
+      },
+      {
+        label: "Cities",
+        value: cities.length || 0,
+        subtitle: "Service cities",
+        tab: "cities" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Winners",
+        value: winnerUser.length,
+        subtitle: "Lucky draw winners",
+        tab: "winners" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Minimum fares",
+        value: routeMinimumFares.length,
+        subtitle: "Configured route rules",
+        tab: "minimum-fares" as TabKey,
+        status: "default" as const,
       },
     ],
     [
+      cities.length,
+      exchanges?.length,
+      fraudReports?.length,
       membership.gold,
       membership.platinum,
       membership.regular,
+      membership.silver,
+      pendingCount,
+      pendingProfileChangeCount,
+      pendingVehicleCount,
+      requirements?.length,
+      routeMinimumFares.length,
       totalUsers,
       unverifiedCount,
       verifiedCount,
+      winnerUser.length,
+    ],
+  );
+
+  const registrationTrend = useMemo(() => {
+    const now = new Date();
+    const days = 14;
+    const buckets: { label: string; value: number; key: string }[] = [];
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      buckets.push({
+        key,
+        label: `${d.getDate()}/${d.getMonth() + 1}`,
+        value: 0,
+      });
+    }
+    const index = new Map(buckets.map((b, i) => [b.key, i]));
+    for (const user of users ?? []) {
+      if (!user.created_at) continue;
+      const key = user.created_at.slice(0, 10);
+      const idx = index.get(key);
+      if (idx !== undefined) buckets[idx].value += 1;
+    }
+    return buckets.map(({ label, value }) => ({ label, value }));
+  }, [users]);
+
+  const registrationsLast30 = useMemo(() => {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const prevCutoff = cutoff - 30 * 24 * 60 * 60 * 1000;
+    let current = 0;
+    let previous = 0;
+    for (const user of users ?? []) {
+      if (!user.created_at) continue;
+      const t = new Date(user.created_at).getTime();
+      if (!Number.isFinite(t)) continue;
+      if (t >= cutoff) current += 1;
+      else if (t >= prevCutoff) previous += 1;
+    }
+    const trendLabel =
+      previous > 0
+        ? `${(((current - previous) / previous) * 100).toFixed(1)}% vs previous 30 days`
+        : current > 0
+          ? "New activity in last 30 days"
+          : null;
+    return { current, previous, trendLabel };
+  }, [users]);
+
+  const membershipSlices = useMemo(
+    () => [
+      { label: "Regular", value: membership.regular, color: "#64748b" },
+      { label: "Silver", value: membership.silver, color: "#94a3b8" },
+      { label: "Gold", value: membership.gold, color: "#ca8a04" },
+      { label: "Platinum", value: membership.platinum, color: "#7c3aed" },
+    ],
+    [membership],
+  );
+
+  const verificationSlices = useMemo(
+    () => [
+      { label: "Verified", value: verifiedCount, color: "#059669" },
+      { label: "Unverified", value: unverifiedCount, color: "#d97706" },
+    ],
+    [unverifiedCount, verifiedCount],
+  );
+
+  const requirementsByRideType = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of requirements ?? []) {
+      const key =
+        String(
+          (row as { ride_type?: string | null }).ride_type ??
+            (row as { car_type?: string | null }).car_type ??
+            "Unknown",
+        ).trim() || "Unknown";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([label, value]) => ({ label, value }));
+  }, [requirements]);
+
+  const navGroups = useMemo(
+    () => [
+      {
+        title: "Overview",
+        items: [{ key: "overview" as TabKey, label: "Dashboard" }],
+      },
+      {
+        title: "Operations",
+        items: [
+          {
+            key: "users" as TabKey,
+            label: "Users",
+            count: users?.length || 0,
+          },
+          {
+            key: "requirements" as TabKey,
+            label: "Requirements",
+            count: requirements?.length || 0,
+          },
+          {
+            key: "exchanges" as TabKey,
+            label: "Exchanges",
+            count: exchanges?.length || 0,
+          },
+          {
+            key: "pending" as TabKey,
+            label: "Pending Verification",
+            count: pendingCount,
+            highlightIfCountAboveZero: true,
+          },
+          {
+            key: "car-verification" as TabKey,
+            label: "Car Verification",
+            count: pendingVehicleCount,
+            highlightIfCountAboveZero: true,
+          },
+          {
+            key: "profile-changes" as TabKey,
+            label: "Profile Changes",
+            count: pendingProfileChangeCount,
+          },
+          {
+            key: "fraud-reports" as TabKey,
+            label: "Fraud Reports",
+            count: fraudReports?.length || 0,
+            highlightIfCountAboveZero: true,
+          },
+          {
+            key: "rejected-partial" as TabKey,
+            label: "Rejected/Partial",
+            count: rejectedPartialCount,
+          },
+          {
+            key: "not-started" as TabKey,
+            label: "Not Started",
+            count: notStartedCount,
+          },
+        ],
+      },
+      {
+        title: "Membership & Business",
+        items: [
+          { key: "priority-settings" as TabKey, label: "Priority Timeline" },
+          {
+            key: "minimum-fares" as TabKey,
+            label: "Minimum Fare",
+            count: routeMinimumFares.length,
+          },
+          {
+            key: "cities" as TabKey,
+            label: "Cities",
+            count: cities.length || 0,
+          },
+        ],
+      },
+      {
+        title: "Content",
+        items: [
+          { key: "about-us" as TabKey, label: "About Us" },
+          {
+            key: "sliders" as TabKey,
+            label: "Sliders",
+            count: sliders?.length || 0,
+          },
+          {
+            key: "winners" as TabKey,
+            label: "Winners",
+            count: winnerUser.length,
+          },
+          { key: "in-app-popups" as TabKey, label: "In-App Pop-ups" },
+          { key: "birthday-date" as TabKey, label: "Birthday" },
+        ],
+      },
+    ],
+    [
+      cities.length,
+      exchanges?.length,
+      fraudReports?.length,
+      notStartedCount,
+      pendingCount,
+      pendingProfileChangeCount,
+      pendingVehicleCount,
+      rejectedPartialCount,
+      requirements?.length,
+      routeMinimumFares.length,
+      sliders?.length,
+      users?.length,
+      winnerUser.length,
     ],
   );
 
@@ -2038,38 +2236,95 @@ export function DashboardTabs({
   };
 
   return (
-    <section>
+    <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
       {successMessage ? (
-        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+        <div className="fixed left-4 right-4 top-16 z-50 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 shadow-lg lg:left-auto lg:right-6 lg:w-96">
           {successMessage}
         </div>
       ) : null}
 
       {errorMessage ? (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+        <div className="fixed left-4 right-4 top-16 z-50 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-lg lg:left-auto lg:right-6 lg:w-96">
           {errorMessage}
         </div>
       ) : null}
+
+      <button
+        type="button"
+        className="flex h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 lg:hidden"
+        onClick={() => setNavOpen((v) => !v)}
+        aria-expanded={navOpen}
+        aria-controls="admin-side-nav"
+      >
+        {navOpen ? "Close menu" : "Open menu"}
+      </button>
+
+      {navOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
+          aria-label="Close navigation overlay"
+          onClick={() => setNavOpen(false)}
+        />
+      ) : null}
+
+      <aside
+        id="admin-side-nav"
+        className={`fixed inset-y-0 left-0 z-40 w-72 overflow-y-auto border-r border-slate-200 bg-white p-4 shadow-xl transition-transform lg:static lg:z-0 lg:w-64 lg:shrink-0 lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
+          navOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        }`}
+      >
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Navigation
+            </p>
+            <p className="text-sm font-bold text-slate-900">Control center</p>
+          </div>
+          <button
+            type="button"
+            onClick={logout}
+            className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Log out
+          </button>
+        </div>
+
+        <nav className="space-y-4" aria-label="Admin modules">
+          {navGroups.map((group) => (
+            <div key={group.title}>
+              <h2 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                {group.title}
+              </h2>
+              <ul className="space-y-1">
+                {group.items.map((item) => (
+                  <li key={item.key}>
+                    <AdminNavCard
+                      item={item}
+                      isActive={activeTab === item.key}
+                      onSelect={selectTab}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="min-w-0 flex-1">
       <header className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
               Admin Dashboard
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:mt-1.5 sm:text-3xl">
-              Sai ki Gadi Verification Console
+              Sai ki Gadi Control Center
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Monitor signup analytics and manually verify document uploads.
+              Operational overview, verification queues, and content tools.
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={logout}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Log out
-            </button>
           </div>
         </div>
       </header>
@@ -2104,55 +2359,50 @@ export function DashboardTabs({
         </div>
       ) : null}
 
-      <nav className="mb-5 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
-            Quick Access
-          </h2>
-          <div className="admin-nav-grid">
-            {quickAccessTabs.map((item) => (
-              <AdminNavCard
-                key={item.key}
-                item={item}
-                isActive={activeTab === item.key}
-                onSelect={setActiveTab}
-              />
-            ))}
-          </div>
-        </section>
-
-        <div className="border-t border-slate-100" />
-
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
-            All Admin Features
-          </h2>
-          <div className="admin-nav-grid admin-nav-grid-features">
-            {allFeatureTabs.map((item) => (
-              <AdminNavCard
-                key={item.key}
-                item={item}
-                isActive={activeTab === item.key}
-                onSelect={setActiveTab}
-              />
-            ))}
-          </div>
-        </section>
-      </nav>
-
       {activeTab === "overview" ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {overviewCards.map((card) => (
-            <article
-              key={card.label}
-              onClick={() => setActiveTab(card.tab as TabKey)}
-              className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${card.accent}`}
-            >
-              <p className="text-sm font-semibold opacity-85">{card.label}</p>
-              <p className="mt-2 text-3xl font-bold">{card.value}</p>
-              <p className="mt-1 text-xs opacity-75">{card.subtitle}</p>
-            </article>
-          ))}
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {overviewCards.map((card) => (
+              <KpiCard
+                key={card.label}
+                title={card.label}
+                value={card.value}
+                subtitle={card.subtitle}
+                status={card.status}
+                trendLabel={
+                  card.label === "Total users"
+                    ? registrationsLast30.trendLabel
+                    : null
+                }
+                onClick={() => selectTab(card.tab)}
+              />
+            ))}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <SimpleBarChart
+              title="User registrations (last 14 days)"
+              points={registrationTrend}
+            />
+            <SimpleDonutChart
+              title="Membership distribution"
+              slices={membershipSlices}
+            />
+            <SimpleDonutChart
+              title="Verified vs unverified"
+              slices={verificationSlices}
+            />
+            <SimpleBarChart
+              title="Requirements by ride / car type"
+              points={requirementsByRideType}
+              emptyLabel="No requirements in the current loaded set"
+            />
+          </div>
+
+          <p className="text-xs text-slate-500">
+            Trends use real <code>users.created_at</code> values. Percentage
+            change is shown only when a prior 30-day baseline exists.
+          </p>
         </div>
       ) : activeTab === "pending" ? (
         <>
@@ -5278,6 +5528,7 @@ export function DashboardTabs({
           </div>
         </div>
       ) : null}
+      </div>
     </section>
   );
 }
