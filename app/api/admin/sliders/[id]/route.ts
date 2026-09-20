@@ -1,3 +1,4 @@
+import { requireAdminApi } from "@/lib/admin-api";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -12,6 +13,9 @@ function normalizeMediaType(value: unknown): "image" | "video" {
 }
 
 export async function PUT(req: NextRequest, context: Context) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const body = await req.json();
 
@@ -67,6 +71,9 @@ export async function PUT(req: NextRequest, context: Context) {
 }
 
 export async function DELETE(req: NextRequest, context: Context) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const { id } = await context.params;
 

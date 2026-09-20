@@ -2,13 +2,16 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { ADMIN_SESSION_COOKIE } from "@/lib/admin-auth";
+import {
+  ADMIN_SESSION_COOKIE,
+  isValidAdminSessionValue,
+} from "@/lib/admin-auth";
 
 import { LoginForm } from "./login-form";
 
 export default async function Home() {
   const cookieStore = await cookies();
-  if (cookieStore.get(ADMIN_SESSION_COOKIE)?.value === "1") {
+  if (isValidAdminSessionValue(cookieStore.get(ADMIN_SESSION_COOKIE)?.value)) {
     redirect("/dashboard");
   }
 

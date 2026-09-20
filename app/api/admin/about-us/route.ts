@@ -1,3 +1,4 @@
+import { requireAdminApi } from "@/lib/admin-api";
 import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -33,6 +34,9 @@ function normalizeText(value: unknown): string {
 }
 
 export async function GET(req: Request) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const { searchParams } = new URL(req.url);
     const languageCode = searchParams.get("language_code");
@@ -77,6 +81,9 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const body = await req.json();
     const languageCode = body.language_code;

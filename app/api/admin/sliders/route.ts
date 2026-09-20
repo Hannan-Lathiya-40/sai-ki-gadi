@@ -1,3 +1,4 @@
+import { requireAdminApi } from "@/lib/admin-api";
 import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -7,6 +8,9 @@ function normalizeMediaType(value: unknown): "image" | "video" {
 }
 
 export async function POST(req: Request) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const body = await req.json();
 

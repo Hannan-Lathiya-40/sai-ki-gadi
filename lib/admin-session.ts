@@ -1,7 +1,10 @@
-import { ADMIN_SESSION_COOKIE } from "./admin-auth";
+import {
+  ADMIN_SESSION_COOKIE,
+  isValidAdminSessionValue,
+} from "./admin-auth";
 
 export function isAdminSessionCookieValue(value: string | undefined): boolean {
-  return value === "1";
+  return isValidAdminSessionValue(value);
 }
 
 type CookieReader = {

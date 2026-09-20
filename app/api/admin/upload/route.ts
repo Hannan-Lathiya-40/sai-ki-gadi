@@ -1,3 +1,4 @@
+import { requireAdminApi } from "@/lib/admin-api";
 import { randomUUID } from "crypto";
 
 import { NextResponse } from "next/server";
@@ -25,6 +26,9 @@ function normalizeMediaKind(value: FormDataEntryValue | null): "image" | "video"
 }
 
 export async function POST(request: Request) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const formData = await request.formData();
 

@@ -1,3 +1,4 @@
+import { requireAdminApi } from "@/lib/admin-api";
 import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -5,6 +6,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export async function POST(
   request: Request,
 ) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const { userId } =
       await request.json();

@@ -1,3 +1,4 @@
+import { requireAdminApi } from "@/lib/admin-api";
 import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -12,6 +13,9 @@ export type RequirementPrioritySettings = {
 };
 
 export async function GET() {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const { data, error } = await supabaseAdmin
       .from("requirement_priority_settings")
@@ -45,6 +49,9 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const __adminGate = await requireAdminApi();
+  if (!__adminGate.ok) return __adminGate.response;
+
   try {
     const body = await req.json();
 
