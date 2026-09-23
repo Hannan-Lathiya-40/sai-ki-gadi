@@ -569,7 +569,20 @@ Deno.serve(async (req) => {
       return json(200, { ok: true, skipped: "invalid_send_time" });
     }
 
-    const due = force || isSendTimeDue(minutes, sendTime);
+    if (!force && !isSendTimeDue(minutes, sendTime)) {
+      console.log(`${LOG} Completed`, {
+        skipped: "not_due",
+        sendTime,
+        kolkataTime: hhmm,
+      });
+      return json(200, {
+        ok: true,
+        skipped: "not_due",
+        sendTime,
+        kolkataTime: hhmm,
+        date: dateKey,
+      });
+    }
 
     const { data: birthdayUsers, error: usersError } = await supabase.rpc(
       "list_users_with_birthday_on",
@@ -578,7 +591,7 @@ Deno.serve(async (req) => {
 
     if (usersError) throw usersError;
 
-    let users = (birthdayUsers ?? []) as BirthdayUser[];
+    const users = (birthdayUsers ?? []) as BirthdayUser[];
     console.log(`${LOG} Birthday users`, {
       date: dateKey,
       count: users.length,
@@ -592,55 +605,6 @@ Deno.serve(async (req) => {
         date: dateKey,
         kolkataTime: hhmm,
       });
-    }
-
-    // Outside the send window: only retry same-day failures / stale pending.
-    // After success, unique constraint blocks duplicates.
-    if (!due) {
-      const { data: retryLogs, error: retryErr } = await supabase
-        .from("birthday_notification_logs")
-        .select("birthday_user_id, status, created_at")
-        .eq("birthday_date", dateKey)
-        .eq("scheduled_key", SCHEDULED_KEY)
-        .in("status", ["failure", "pending"]);
-
-      if (retryErr) throw retryErr;
-
-      const retryIds = new Set<string>();
-      for (const row of retryLogs ?? []) {
-        if (row.status === "failure") {
-          retryIds.add(row.birthday_user_id as string);
-          continue;
-        }
-        const createdAt = row.created_at
-          ? new Date(row.created_at).getTime()
-          : 0;
-        if (
-          row.status === "pending" &&
-          Number.isFinite(createdAt) &&
-          Date.now() - createdAt > STALE_PENDING_MS
-        ) {
-          retryIds.add(row.birthday_user_id as string);
-        }
-      }
-
-      if (retryIds.size === 0) {
-        console.log(`${LOG} Completed`, {
-          skipped: "not_due",
-          sendTime,
-          kolkataTime: hhmm,
-        });
-        return json(200, {
-          ok: true,
-          skipped: "not_due",
-          sendTime,
-          kolkataTime: hhmm,
-          date: dateKey,
-        });
-      }
-
-      users = users.filter((u) => retryIds.has(u.id));
-      console.log(`${LOG} Same-day retry`, { count: users.length });
     }
 
     const scheduledKey = force
@@ -658,8 +622,7 @@ Deno.serve(async (req) => {
       date: dateKey,
       kolkataTime: hhmm,
       force,
-      due,
-      birthdayCount: (birthdayUsers ?? []).length,
+      birthdayCount: users.length,
       processed: results.length,
       truncated: users.length > MAX_BIRTHDAYS_PER_RUN,
     });
@@ -670,8 +633,7 @@ Deno.serve(async (req) => {
       kolkataTime: hhmm,
       sendTime,
       force,
-      due,
-      birthdayCount: (birthdayUsers ?? []).length,
+      birthdayCount: users.length,
       processed: results.length,
       truncated: users.length > MAX_BIRTHDAYS_PER_RUN,
       results,
