@@ -48,6 +48,26 @@ type LuckyDrawNotificationSettings = {
   updated_at: string | null;
 };
 
+type BirthdayNotificationSettings = {
+  id: number;
+  enabled: boolean;
+  send_time: string;
+  updated_at: string | null;
+};
+
+type BirthdayNotificationStatus = {
+  date: string;
+  todayBirthdayCount: number;
+  processed: {
+    success: number;
+    failure: number;
+    pending: number;
+    totalLogged: number;
+  };
+  lastScheduledSuccessAt: string | null;
+  settings: { enabled: boolean; send_time: string } | null;
+};
+
 const LUCKY_DRAW_SLOT_OPTIONS: { value: string; label: string }[] = [
   { value: "10:00", label: "10:00 AM" },
   { value: "14:00", label: "02:00 PM" },
@@ -329,6 +349,7 @@ type DashboardTabsProps = {
   fraudReports: FraudReport[];
   prioritySettings: PrioritySettings;
   luckyDrawNotificationSettings: LuckyDrawNotificationSettings;
+  birthdayNotificationSettings: BirthdayNotificationSettings;
   profileChangeRequests: ProfileChangeRequestRow[];
   vehicles: VehicleVerificationRow[];
   routeMinimumFares: RouteMinimumFareRow[];
@@ -469,6 +490,7 @@ export function DashboardTabs({
   fraudReports,
   prioritySettings,
   luckyDrawNotificationSettings,
+  birthdayNotificationSettings,
   profileChangeRequests,
   vehicles,
   routeMinimumFares,
@@ -679,6 +701,24 @@ export function DashboardTabs({
     string | null
   >(null);
 
+  const [birthdayNotifEnabled, setBirthdayNotifEnabled] = useState(
+    birthdayNotificationSettings?.enabled ?? true,
+  );
+  const [birthdayNotifTime, setBirthdayNotifTime] = useState(
+    birthdayNotificationSettings?.send_time ?? "09:00",
+  );
+  const [savingBirthdayNotif, setSavingBirthdayNotif] = useState(false);
+  const [birthdayNotifMessage, setBirthdayNotifMessage] = useState<
+    string | null
+  >(null);
+  const [sendingBirthdayTest, setSendingBirthdayTest] = useState(false);
+  const [birthdayTestMessage, setBirthdayTestMessage] = useState<string | null>(
+    null,
+  );
+  const [birthdayNotifStatus, setBirthdayNotifStatus] =
+    useState<BirthdayNotificationStatus | null>(null);
+  const [loadingBirthdayStatus, setLoadingBirthdayStatus] = useState(false);
+
   useEffect(() => {
     setLuckyDrawEnabled(luckyDrawNotificationSettings?.enabled ?? true);
     setLuckyDrawSlots(
@@ -687,6 +727,52 @@ export function DashboardTabs({
         : ["10:00", "14:00", "18:00", "21:00"],
     );
   }, [luckyDrawNotificationSettings]);
+
+  useEffect(() => {
+    setBirthdayNotifEnabled(birthdayNotificationSettings?.enabled ?? true);
+    setBirthdayNotifTime(birthdayNotificationSettings?.send_time ?? "09:00");
+  }, [birthdayNotificationSettings]);
+
+  const loadBirthdayNotificationStatus = useCallback(async () => {
+    try {
+      setLoadingBirthdayStatus(true);
+      const response = await fetch("/api/admin/birthday-notification-status", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        date?: string;
+        todayBirthdayCount?: number;
+        processed?: BirthdayNotificationStatus["processed"];
+        lastScheduledSuccessAt?: string | null;
+        settings?: BirthdayNotificationStatus["settings"];
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) return;
+      setBirthdayNotifStatus({
+        date: payload.date ?? "",
+        todayBirthdayCount: payload.todayBirthdayCount ?? 0,
+        processed: payload.processed ?? {
+          success: 0,
+          failure: 0,
+          pending: 0,
+          totalLogged: 0,
+        },
+        lastScheduledSuccessAt: payload.lastScheduledSuccessAt ?? null,
+        settings: payload.settings ?? null,
+      });
+    } catch {
+      // Keep previous status.
+    } finally {
+      setLoadingBirthdayStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "birthday-date") return;
+    void loadBirthdayNotificationStatus();
+  }, [activeTab, loadBirthdayNotificationStatus]);
 
   function toggleLuckyDrawSlot(slot: string) {
     setLuckyDrawSlots((prev) => {
@@ -771,6 +857,96 @@ export function DashboardTabs({
       setLuckyDrawTestMessage("Failed to send test notification.");
     } finally {
       setSendingLuckyDrawTest(false);
+    }
+  }
+
+  function formatSendTimeLabel(hhmm: string): string {
+    const match = /^(\d{2}):(\d{2})$/.exec(hhmm.trim());
+    if (!match) return hhmm;
+    let h = Number(match[1]);
+    const m = match[2];
+    const suffix = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${m} ${suffix}`;
+  }
+
+  async function saveBirthdayNotificationSettings() {
+    try {
+      setSavingBirthdayNotif(true);
+      setBirthdayNotifMessage(null);
+      const response = await fetch(
+        "/api/admin/birthday-notification-settings",
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: birthdayNotifEnabled,
+            send_time: birthdayNotifTime,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setBirthdayNotifMessage(
+          payload?.error ?? "Failed to save Birthday notification settings.",
+        );
+        return;
+      }
+      setBirthdayNotifMessage("Birthday notification settings saved.");
+      void loadBirthdayNotificationStatus();
+      router.refresh();
+    } catch {
+      setBirthdayNotifMessage(
+        "Failed to save Birthday notification settings.",
+      );
+    } finally {
+      setSavingBirthdayNotif(false);
+    }
+  }
+
+  async function sendBirthdayTestNotification() {
+    try {
+      setSendingBirthdayTest(true);
+      setBirthdayTestMessage(null);
+      const response = await fetch(
+        "/api/admin/birthday-notification-test",
+        { method: "POST" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setBirthdayTestMessage(
+          payload?.error ?? "Failed to send test notification.",
+        );
+        return;
+      }
+      const skipped =
+        payload?.result &&
+        typeof payload.result === "object" &&
+        "skipped" in payload.result
+          ? String((payload.result as { skipped?: string }).skipped ?? "")
+          : "";
+      if (skipped === "no_birthdays") {
+        setBirthdayTestMessage(
+          "No birthdays today (Asia/Kolkata). Test did not send.",
+        );
+        void loadBirthdayNotificationStatus();
+        return;
+      }
+      const processed =
+        payload?.result &&
+        typeof payload.result === "object" &&
+        "processed" in payload.result
+          ? Number((payload.result as { processed?: number }).processed ?? 0)
+          : 0;
+      setBirthdayTestMessage(
+        `Test Birthday notification run finished (${processed} person(s)). Uses existing Sai Ki Gadi sound.`,
+      );
+      void loadBirthdayNotificationStatus();
+    } catch {
+      setBirthdayTestMessage("Failed to send test notification.");
+    } finally {
+      setSendingBirthdayTest(false);
     }
   }
 
@@ -3434,6 +3610,140 @@ export function DashboardTabs({
         </>
       ) : activeTab === "birthday-date" ? (
         <>
+          <div className="admin-card mb-5 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="admin-eyebrow">🎂 Birthday Notifications</p>
+                <h2 className="admin-section-title mt-1">
+                  Push notifications for today&apos;s birthdays
+                </h2>
+                <p className="admin-caption mt-1 max-w-2xl">
+                  Automatically notify all app users when someone has a birthday
+                  today. Uses the same FCM channel/sound as Winner
+                  notifications. Asia/Kolkata timezone. In-app birthday popup is
+                  unchanged.
+                </p>
+              </div>
+              <span
+                className={`admin-badge ${
+                  birthdayNotifEnabled
+                    ? "admin-badge-success"
+                    : "admin-badge-neutral"
+                }`}
+              >
+                {birthdayNotifEnabled ? "● Enabled" : "○ Disabled"}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Notification Time</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--admin-text)]">
+                  {formatSendTimeLabel(birthdayNotifTime)}
+                </p>
+              </div>
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Timezone</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--admin-text)]">
+                  Asia/Kolkata
+                </p>
+              </div>
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Today&apos;s Birthdays</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-[var(--admin-text)]">
+                  {loadingBirthdayStatus
+                    ? "…"
+                    : (birthdayNotifStatus?.todayBirthdayCount ?? "—")}
+                </p>
+              </div>
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Today&apos;s Notifications</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-[var(--admin-text)]">
+                  {loadingBirthdayStatus
+                    ? "…"
+                    : birthdayNotifStatus
+                      ? `${birthdayNotifStatus.processed.success} / ${birthdayNotifStatus.todayBirthdayCount} processed`
+                      : "—"}
+                </p>
+              </div>
+            </div>
+
+            {birthdayNotifStatus?.lastScheduledSuccessAt ? (
+              <p className="admin-caption mt-3">
+                Last scheduled success:{" "}
+                {formatDateTime(birthdayNotifStatus.lastScheduledSuccessAt)}
+              </p>
+            ) : (
+              <p className="admin-caption mt-3">
+                No scheduled success logged for today yet.
+              </p>
+            )}
+
+            <div className="mt-5 flex flex-wrap items-end gap-4">
+              <div>
+                <p className="admin-label">Send Birthday Notifications</p>
+                <button
+                  type="button"
+                  onClick={() => setBirthdayNotifEnabled((v) => !v)}
+                  className={`admin-btn ${
+                    birthdayNotifEnabled
+                      ? "admin-btn-success"
+                      : "admin-btn-secondary"
+                  }`}
+                >
+                  {birthdayNotifEnabled ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+              <div>
+                <label htmlFor="birthday-notif-time" className="admin-label">
+                  Send Time (Asia/Kolkata)
+                </label>
+                <input
+                  id="birthday-notif-time"
+                  type="time"
+                  value={birthdayNotifTime}
+                  onChange={(e) => setBirthdayNotifTime(e.target.value)}
+                  className="admin-input w-40"
+                />
+              </div>
+            </div>
+
+            {birthdayNotifMessage ? (
+              <p className="mt-3 text-sm font-medium text-[var(--admin-accent)]">
+                {birthdayNotifMessage}
+              </p>
+            ) : null}
+            {birthdayTestMessage ? (
+              <p className="mt-2 text-sm font-medium text-[var(--admin-text-secondary)]">
+                {birthdayTestMessage}
+              </p>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <AdminButton
+                variant="primary"
+                loading={savingBirthdayNotif}
+                onClick={() => void saveBirthdayNotificationSettings()}
+              >
+                Save Changes
+              </AdminButton>
+              <AdminButton
+                variant="secondary"
+                loading={sendingBirthdayTest}
+                onClick={() => void sendBirthdayTestNotification()}
+              >
+                Send Test Notification
+              </AdminButton>
+              <AdminButton
+                variant="ghost"
+                loading={loadingBirthdayStatus}
+                onClick={() => void loadBirthdayNotificationStatus()}
+              >
+                Refresh Status
+              </AdminButton>
+            </div>
+          </div>
+
           <div className="mb-4">
             <h2 className="text-lg font-bold text-slate-900">Birthday Date</h2>
             <p className="mt-1 text-sm text-slate-600">

@@ -347,6 +347,7 @@ export default async function DashboardPage() {
     slidersResult,
     prioritySettingsResult,
     luckyDrawResult,
+    birthdayNotifResult,
     requirementsResult,
     exchangesResult,
     fraudReportsResult,
@@ -385,6 +386,11 @@ export default async function DashboardPage() {
     supabaseAdmin
       .from("lucky_draw_notification_settings")
       .select("id, enabled, slots, updated_at")
+      .eq("id", 1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("birthday_notification_settings")
+      .select("id, enabled, send_time, updated_at")
       .eq("id", 1)
       .maybeSingle(),
     supabaseAdmin
@@ -501,6 +507,7 @@ export default async function DashboardPage() {
   const sliders = slidersResult.data;
   const prioritySettingsRow = prioritySettingsResult.data;
   const luckyDrawNotificationSettingsRow = luckyDrawResult.data;
+  const birthdayNotificationSettingsRow = birthdayNotifResult.data;
   const requirements = requirementsResult.data;
   const exchanges = exchangesResult.data;
   const fraudReports = fraudReportsResult.data;
@@ -526,6 +533,17 @@ export default async function DashboardPage() {
       ? (luckyDrawNotificationSettingsRow.slots as string[])
       : ["10:00", "14:00", "18:00", "21:00"],
     updated_at: luckyDrawNotificationSettingsRow?.updated_at ?? null,
+  };
+
+  const birthdayNotificationSettings = {
+    id: 1 as const,
+    enabled: birthdayNotificationSettingsRow?.enabled ?? true,
+    send_time:
+      typeof birthdayNotificationSettingsRow?.send_time === "string" &&
+      birthdayNotificationSettingsRow.send_time.trim()
+        ? birthdayNotificationSettingsRow.send_time
+        : "09:00",
+    updated_at: birthdayNotificationSettingsRow?.updated_at ?? null,
   };
 
   const profileChangeRequests: ProfileChangeRequestRow[] = (
@@ -602,6 +620,7 @@ export default async function DashboardPage() {
           fraudReports={fraudReports ?? []}
           prioritySettings={prioritySettings}
           luckyDrawNotificationSettings={luckyDrawNotificationSettings}
+          birthdayNotificationSettings={birthdayNotificationSettings}
           profileChangeRequests={profileChangeRequests}
           vehicles={vehicles}
           routeMinimumFares={routeMinimumFares}
