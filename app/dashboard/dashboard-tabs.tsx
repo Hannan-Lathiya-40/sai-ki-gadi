@@ -65,6 +65,11 @@ type BirthdayNotificationStatus = {
     totalLogged: number;
   };
   lastScheduledSuccessAt: string | null;
+  lastScheduledFailureAt?: string | null;
+  lastScheduledFailureMessage?: string | null;
+  nextCheckLabel?: string | null;
+  kolkataTimeLabel?: string | null;
+  sendTimeLabel?: string | null;
   settings: { enabled: boolean; send_time: string } | null;
 };
 
@@ -746,6 +751,11 @@ export function DashboardTabs({
         todayBirthdayCount?: number;
         processed?: BirthdayNotificationStatus["processed"];
         lastScheduledSuccessAt?: string | null;
+        lastScheduledFailureAt?: string | null;
+        lastScheduledFailureMessage?: string | null;
+        nextCheckLabel?: string | null;
+        kolkataTimeLabel?: string | null;
+        sendTimeLabel?: string | null;
         settings?: BirthdayNotificationStatus["settings"];
         error?: string;
       };
@@ -760,6 +770,12 @@ export function DashboardTabs({
           totalLogged: 0,
         },
         lastScheduledSuccessAt: payload.lastScheduledSuccessAt ?? null,
+        lastScheduledFailureAt: payload.lastScheduledFailureAt ?? null,
+        lastScheduledFailureMessage:
+          payload.lastScheduledFailureMessage ?? null,
+        nextCheckLabel: payload.nextCheckLabel ?? null,
+        kolkataTimeLabel: payload.kolkataTimeLabel ?? null,
+        sendTimeLabel: payload.sendTimeLabel ?? null,
         settings: payload.settings ?? null,
       });
     } catch {
@@ -3668,16 +3684,37 @@ export function DashboardTabs({
               </div>
             </div>
 
-            {birthdayNotifStatus?.lastScheduledSuccessAt ? (
-              <p className="admin-caption mt-3">
-                Last scheduled success:{" "}
-                {formatDateTime(birthdayNotifStatus.lastScheduledSuccessAt)}
-              </p>
-            ) : (
-              <p className="admin-caption mt-3">
-                No scheduled success logged for today yet.
-              </p>
-            )}
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Last Run</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--admin-text)]">
+                  {birthdayNotifStatus?.lastScheduledSuccessAt
+                    ? formatDateTime(birthdayNotifStatus.lastScheduledSuccessAt)
+                    : "No scheduled success today"}
+                </p>
+              </div>
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Next Check</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--admin-text)]">
+                  {birthdayNotifStatus?.nextCheckLabel
+                    ? `${birthdayNotifStatus.nextCheckLabel} IST`
+                    : "—"}
+                </p>
+              </div>
+              <div className="rounded-[var(--admin-radius-sm)] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-3">
+                <p className="admin-meta">Last Failure</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--admin-text)]">
+                  {birthdayNotifStatus?.lastScheduledFailureAt
+                    ? formatDateTime(birthdayNotifStatus.lastScheduledFailureAt)
+                    : "None today"}
+                </p>
+                {birthdayNotifStatus?.lastScheduledFailureMessage ? (
+                  <p className="admin-caption mt-1 break-words">
+                    {birthdayNotifStatus.lastScheduledFailureMessage}
+                  </p>
+                ) : null}
+              </div>
+            </div>
 
             <div className="mt-5 flex flex-wrap items-end gap-4">
               <div>
