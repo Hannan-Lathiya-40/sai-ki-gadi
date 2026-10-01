@@ -7,6 +7,11 @@ import {
   supabaseAdmin,
   usingServiceRole,
 } from "@/lib/supabase-admin";
+import { normalizeIndianStateName } from "@/lib/normalize-indian-state";
+import {
+  isVehicleCategory,
+  type VehicleCategory,
+} from "@/lib/vehicle-categories";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -17,12 +22,28 @@ type Body = {
   from_state?: string;
   to_city?: string;
   to_state?: string;
+  vehicle_category?: string | null;
   minimum_fare?: number | string;
   is_active?: boolean;
 };
 
 function normalizePart(value: string): string {
   return value.trim();
+}
+
+function normalizeVehicleCategory(
+  raw: string | null | undefined,
+): VehicleCategory | null | { error: string } {
+  if (raw == null || String(raw).trim() === "") {
+    return null;
+  }
+  const trimmed = String(raw).trim();
+  if (!isVehicleCategory(trimmed)) {
+    return {
+      error: `Invalid vehicle category.`,
+    };
+  }
+  return trimmed;
 }
 
 export async function PUT(request: Request, context: Context) {
@@ -49,12 +70,22 @@ export async function PUT(request: Request, context: Context) {
   const body = (await request.json().catch(() => ({}))) as Body;
 
   const from_city = normalizePart(body.from_city ?? "");
-  const from_state = normalizePart(body.from_state ?? "");
+  const from_state = normalizeIndianStateName(
+    normalizePart(body.from_state ?? ""),
+  );
   const to_city = normalizePart(body.to_city ?? "");
-  const to_state = normalizePart(body.to_state ?? "");
+  const to_state = normalizeIndianStateName(normalizePart(body.to_state ?? ""));
   const fareRaw = body.minimum_fare;
   const minimum_fare =
     typeof fareRaw === "number" ? fareRaw : Number(String(fareRaw ?? "").trim());
+  const vehicle = normalizeVehicleCategory(body.vehicle_category);
+
+  if (vehicle && typeof vehicle === "object" && "error" in vehicle) {
+    return NextResponse.json(
+      { ok: false, error: vehicle.error },
+      { status: 400 },
+    );
+  }
 
   if (!from_city || !from_state || !to_city || !to_state) {
     return NextResponse.json(
@@ -88,6 +119,7 @@ export async function PUT(request: Request, context: Context) {
       from_state,
       to_city,
       to_state,
+      vehicle_category: vehicle as string | null,
       minimum_fare,
       is_active: body.is_active !== false,
     })
@@ -102,7 +134,7 @@ export async function PUT(request: Request, context: Context) {
         {
           ok: false,
           error:
-            "An equivalent route rule already exists (case/whitespace-insensitive).",
+            "A rule already exists for this From City, To City, and Vehicle Category.",
         },
         { status: 400 },
       );

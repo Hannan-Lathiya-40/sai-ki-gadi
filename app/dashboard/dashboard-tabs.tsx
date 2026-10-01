@@ -24,6 +24,10 @@ import { openAdminCommandPalette } from "@/components/admin/command-palette";
 import { AboutUsAdminPanel } from "./components/about-us-admin-panel";
 import { InAppAnnouncementsAdminPanel } from "./components/in-app-announcements-admin-panel";
 import { AdminNavIcon } from "./admin-nav-icons";
+import { FareOverrideRequestsPanel } from "@/components/admin/fare-override-requests-panel";
+import { ActiveFareOverridesPanel } from "@/components/admin/active-fare-overrides-panel";
+import { VEHICLE_CATEGORIES } from "@/lib/vehicle-categories";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type MembershipCounts = {
   regular: number;
@@ -330,10 +334,19 @@ export type RouteMinimumFareRow = {
   from_state: string;
   to_city: string;
   to_state: string;
+  vehicle_category: string | null;
   minimum_fare: number;
   is_active: boolean;
   created_at: string | null;
   updated_at: string | null;
+};
+
+export type FareDashboardStats = {
+  minimumFareRules: number;
+  activeRules: number;
+  pendingFareRequests: number;
+  activeUserOverrides: number;
+  expiredOverrides: number;
 };
 
 type DashboardTabsProps = {
@@ -358,6 +371,7 @@ type DashboardTabsProps = {
   profileChangeRequests: ProfileChangeRequestRow[];
   vehicles: VehicleVerificationRow[];
   routeMinimumFares: RouteMinimumFareRow[];
+  fareStats?: FareDashboardStats | null;
   serviceRoleIssue?: string | null;
   profileChangeRequestsError?: string | null;
   vehiclesError?: string | null;
@@ -382,6 +396,8 @@ type TabKey =
   | "profile-changes"
   | "car-verification"
   | "minimum-fares"
+  | "fare-override-requests"
+  | "active-fare-overrides"
   | "about-us"
   | "in-app-popups";
 
@@ -499,6 +515,7 @@ export function DashboardTabs({
   profileChangeRequests,
   vehicles,
   routeMinimumFares,
+  fareStats = null,
   serviceRoleIssue = null,
   profileChangeRequestsError = null,
   vehiclesError = null,
@@ -638,8 +655,65 @@ export function DashboardTabs({
   const [minFareToCity, setMinFareToCity] = useState("");
   const [minFareToState, setMinFareToState] = useState("");
   const [minFareAmount, setMinFareAmount] = useState("");
+  const [minFareVehicle, setMinFareVehicle] = useState("");
   const [minFareActive, setMinFareActive] = useState(true);
   const [savingMinimumFare, setSavingMinimumFare] = useState(false);
+  const [minFareFilterQ, setMinFareFilterQ] = useState("");
+  const [minFareFilterVehicle, setMinFareFilterVehicle] = useState("");
+  const [minFareFilterStatus, setMinFareFilterStatus] = useState("all");
+  const [liveFareStats, setLiveFareStats] = useState<FareDashboardStats | null>(
+    fareStats,
+  );
+
+  useEffect(() => {
+    setLiveFareStats(fareStats);
+  }, [fareStats]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshStats = async () => {
+      try {
+        const res = await fetch("/api/admin/fare-stats");
+        const json = (await res.json()) as {
+          ok?: boolean;
+          data?: FareDashboardStats;
+        };
+        if (!cancelled && res.ok && json.ok && json.data) {
+          setLiveFareStats(json.data);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void refreshStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
+  // Realtime pending fare request count
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    const channel = supabase
+      .channel("admin-fare-stats-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "fare_override_requests" },
+        () => {
+          void fetch("/api/admin/fare-stats")
+            .then((r) => r.json())
+            .then((json: { ok?: boolean; data?: FareDashboardStats }) => {
+              if (json.ok && json.data) setLiveFareStats(json.data);
+            })
+            .catch(() => undefined);
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, []);
 
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -1497,9 +1571,33 @@ export function DashboardTabs({
       },
       {
         label: "Minimum fares",
-        value: routeMinimumFares.length,
-        subtitle: "Configured route rules",
+        value: liveFareStats?.minimumFareRules ?? routeMinimumFares.length,
+        subtitle: `${liveFareStats?.activeRules ?? routeMinimumFares.filter((r) => r.is_active).length} active rules`,
         tab: "minimum-fares" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Pending fare requests",
+        value: liveFareStats?.pendingFareRequests ?? 0,
+        subtitle: "Awaiting admin review",
+        tab: "fare-override-requests" as TabKey,
+        status:
+          (liveFareStats?.pendingFareRequests ?? 0) > 0
+            ? ("warning" as const)
+            : ("default" as const),
+      },
+      {
+        label: "Active overrides",
+        value: liveFareStats?.activeUserOverrides ?? 0,
+        subtitle: "User-specific lower minimums",
+        tab: "active-fare-overrides" as TabKey,
+        status: "default" as const,
+      },
+      {
+        label: "Expired overrides",
+        value: liveFareStats?.expiredOverrides ?? 0,
+        subtitle: "No longer in effect",
+        tab: "active-fare-overrides" as TabKey,
         status: "default" as const,
       },
     ],
@@ -1507,6 +1605,7 @@ export function DashboardTabs({
       cities.length,
       exchanges?.length,
       fraudReports?.length,
+      liveFareStats,
       membership.gold,
       membership.platinum,
       membership.regular,
@@ -1515,7 +1614,7 @@ export function DashboardTabs({
       pendingProfileChangeCount,
       pendingVehicleCount,
       requirements?.length,
-      routeMinimumFares.length,
+      routeMinimumFares,
       totalUsers,
       unverifiedCount,
       verifiedCount,
@@ -1771,7 +1870,18 @@ export function DashboardTabs({
           {
             key: "minimum-fares" as TabKey,
             label: "Minimum Fare",
-            count: routeMinimumFares.length,
+            count: liveFareStats?.minimumFareRules ?? routeMinimumFares.length,
+          },
+          {
+            key: "fare-override-requests" as TabKey,
+            label: "Minimum Fare Requests",
+            count: liveFareStats?.pendingFareRequests ?? 0,
+            highlightIfCountAboveZero: true,
+          },
+          {
+            key: "active-fare-overrides" as TabKey,
+            label: "Fare Overrides",
+            count: liveFareStats?.activeUserOverrides ?? 0,
           },
           {
             key: "cities" as TabKey,
@@ -1803,6 +1913,7 @@ export function DashboardTabs({
       cities.length,
       exchanges?.length,
       fraudReports?.length,
+      liveFareStats,
       notStartedCount,
       pendingCount,
       pendingProfileChangeCount,
@@ -2383,6 +2494,7 @@ export function DashboardTabs({
     setMinFareToCity("");
     setMinFareToState("");
     setMinFareAmount("");
+    setMinFareVehicle("");
     setMinFareActive(true);
   };
 
@@ -2390,11 +2502,15 @@ export function DashboardTabs({
     try {
       setSavingMinimumFare(true);
       setErrorMessage("");
+      if (!editingMinimumFareId && !minFareVehicle.trim()) {
+        throw new Error("Vehicle category is required.");
+      }
       const payload = {
         from_city: minFareFromCity,
         from_state: minFareFromState,
         to_city: minFareToCity,
         to_state: minFareToState,
+        vehicle_category: minFareVehicle.trim() || null,
         minimum_fare: Number(minFareAmount),
         is_active: minFareActive,
       };
@@ -5056,8 +5172,9 @@ export function DashboardTabs({
                 Set Minimum Fare
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Directional city+state rules. Rajkot → Ahmedabad is separate
-                from Ahmedabad → Rajkot.
+                Directional city+state+vehicle rules. Rajkot → Ahmedabad is
+                separate from Ahmedabad → Rajkot. Legacy rules without a vehicle
+                still apply as fallback.
               </p>
             </div>
             <button
@@ -5070,6 +5187,37 @@ export function DashboardTabs({
             >
               Add Rule
             </button>
+          </div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
+            <input
+              type="search"
+              placeholder="Search city…"
+              value={minFareFilterQ}
+              onChange={(e) => setMinFareFilterQ(e.target.value)}
+              className="h-10 rounded-xl border border-slate-300 px-3 text-sm"
+            />
+            <select
+              value={minFareFilterVehicle}
+              onChange={(e) => setMinFareFilterVehicle(e.target.value)}
+              className="h-10 rounded-xl border border-slate-300 px-3 text-sm"
+            >
+              <option value="">All vehicles</option>
+              <option value="__legacy__">Legacy (no vehicle)</option>
+              {VEHICLE_CATEGORIES.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <select
+              value={minFareFilterStatus}
+              onChange={(e) => setMinFareFilterStatus(e.target.value)}
+              className="h-10 rounded-xl border border-slate-300 px-3 text-sm"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
           </div>
           <div className="admin-table-wrap">
             <div className="overflow-x-auto">
@@ -5089,6 +5237,9 @@ export function DashboardTabs({
                       To State
                     </th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                      Vehicle Category
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">
                       Minimum Fare
                     </th>
                     <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -5106,17 +5257,47 @@ export function DashboardTabs({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {routeMinimumFares.length === 0 ? (
-                    <tr>
-                      <td
-                        className="px-4 py-10 text-center text-slate-500"
-                        colSpan={9}
-                      >
-                        No minimum fare rules yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    routeMinimumFares.map((rule) => (
+                  {(() => {
+                    const filtered = routeMinimumFares.filter((rule) => {
+                      if (
+                        minFareFilterStatus === "active" &&
+                        !rule.is_active
+                      ) {
+                        return false;
+                      }
+                      if (
+                        minFareFilterStatus === "inactive" &&
+                        rule.is_active
+                      ) {
+                        return false;
+                      }
+                      if (minFareFilterVehicle === "__legacy__") {
+                        if (rule.vehicle_category) return false;
+                      } else if (minFareFilterVehicle) {
+                        if (rule.vehicle_category !== minFareFilterVehicle) {
+                          return false;
+                        }
+                      }
+                      if (minFareFilterQ.trim()) {
+                        const q = minFareFilterQ.trim().toLowerCase();
+                        const hay = `${rule.from_city} ${rule.to_city} ${rule.from_state} ${rule.to_state}`.toLowerCase();
+                        if (!hay.includes(q)) return false;
+                      }
+                      return true;
+                    });
+                    if (filtered.length === 0) {
+                      return (
+                        <tr>
+                          <td
+                            className="px-4 py-10 text-center text-slate-500"
+                            colSpan={10}
+                          >
+                            No minimum fare rules match your filters.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return filtered.map((rule) => (
                       <tr key={rule.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3 font-semibold text-slate-800">
                           {rule.from_city}
@@ -5129,6 +5310,17 @@ export function DashboardTabs({
                         </td>
                         <td className="px-4 py-3 text-slate-600">
                           {rule.to_state}
+                        </td>
+                        <td className="px-4 py-3">
+                          {rule.vehicle_category ? (
+                            <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                              {rule.vehicle_category}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                              Legacy (all)
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 font-semibold text-slate-900">
                           ₹{Number(rule.minimum_fare).toLocaleString("en-IN")}
@@ -5161,6 +5353,7 @@ export function DashboardTabs({
                                 setMinFareToCity(rule.to_city);
                                 setMinFareToState(rule.to_state);
                                 setMinFareAmount(String(rule.minimum_fare));
+                                setMinFareVehicle(rule.vehicle_category ?? "");
                                 setMinFareActive(rule.is_active);
                                 setShowMinimumFareModal(true);
                               }}
@@ -5190,13 +5383,17 @@ export function DashboardTabs({
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
           </div>
         </>
+      ) : activeTab === "fare-override-requests" ? (
+        <FareOverrideRequestsPanel />
+      ) : activeTab === "active-fare-overrides" ? (
+        <ActiveFareOverridesPanel />
       ) : activeTab === "about-us" ? (
         <AboutUsAdminPanel />
       ) : activeTab === "in-app-popups" ? (
@@ -6098,6 +6295,29 @@ export function DashboardTabs({
               </div>
               <div>
                 <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Vehicle Category
+                </label>
+                <select
+                  value={minFareVehicle}
+                  onChange={(e) => setMinFareVehicle(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                >
+                  <option value="">Select vehicle…</option>
+                  {VEHICLE_CATEGORIES.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+                {editingMinimumFareId && !minFareVehicle ? (
+                  <p className="mt-1 text-xs text-amber-700">
+                    This is a legacy rule (no vehicle). Choose a vehicle to
+                    convert it, or leave blank to keep as route-level fallback.
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Minimum Fare (₹)
                 </label>
                 <input
@@ -6117,25 +6337,38 @@ export function DashboardTabs({
                 />
                 Active
               </label>
-              <button
-                type="button"
-                disabled={
-                  savingMinimumFare ||
-                  !minFareFromCity.trim() ||
-                  !minFareFromState.trim() ||
-                  !minFareToCity.trim() ||
-                  !minFareToState.trim() ||
-                  !minFareAmount.trim()
-                }
-                onClick={() => void saveMinimumFare()}
-                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-              >
-                {savingMinimumFare
-                  ? "Saving…"
-                  : editingMinimumFareId
-                    ? "Update Rule"
-                    : "Create Rule"}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMinimumFareModal(false);
+                    resetMinimumFareForm();
+                  }}
+                  className="flex-1 rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    savingMinimumFare ||
+                    !minFareFromCity.trim() ||
+                    !minFareFromState.trim() ||
+                    !minFareToCity.trim() ||
+                    !minFareToState.trim() ||
+                    !minFareAmount.trim() ||
+                    (!editingMinimumFareId && !minFareVehicle.trim())
+                  }
+                  onClick={() => void saveMinimumFare()}
+                  className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                >
+                  {savingMinimumFare
+                    ? "Saving…"
+                    : editingMinimumFareId
+                      ? "Save Rule"
+                      : "Save Rule"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

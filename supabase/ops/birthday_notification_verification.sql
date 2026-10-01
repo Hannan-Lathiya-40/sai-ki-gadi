@@ -10,7 +10,7 @@ where id = 1;
 -- 2) Today's birthdays (IST calendar date)
 select *
 from public.list_users_with_birthday_on(
-  (timezone('Asia/Kolkata', now()))::date
+  (timezone('Asia/Kolkata', now()))::date 
 );
 
 -- 3) Idempotency / today's scheduled logs

@@ -492,6 +492,7 @@ export default async function DashboardPage() {
       from_state,
       to_city,
       to_state,
+      vehicle_category,
       minimum_fare,
       is_active,
       created_at,
@@ -515,8 +516,60 @@ export default async function DashboardPage() {
   const profileChangeRequestsError = profileChangeRequestsResult.error;
   const vehicleRows = vehiclesResult.data;
   const vehiclesError = vehiclesResult.error;
-  const routeMinimumFareRows = routeMinimumFaresResult.data;
-  const routeMinimumFaresError = routeMinimumFaresResult.error;
+  let routeMinimumFareRows = routeMinimumFaresResult.data;
+  let routeMinimumFaresError = routeMinimumFaresResult.error;
+
+  // Pre-migration fallback: column vehicle_category may not exist yet.
+  if (
+    routeMinimumFaresError?.message
+      ?.toLowerCase()
+      .includes("vehicle_category")
+  ) {
+    const retry = await supabaseAdmin
+      .from("route_minimum_fares")
+      .select(
+        `
+      id,
+      from_city,
+      from_state,
+      to_city,
+      to_state,
+      minimum_fare,
+      is_active,
+      created_at,
+      updated_at
+    `,
+      )
+      .order("updated_at", { ascending: false })
+      .limit(500);
+    routeMinimumFareRows = retry.data as typeof routeMinimumFareRows;
+    routeMinimumFaresError = retry.error;
+  }
+
+  // Fare override tables may not exist until migration 052 is applied.
+  const [
+    pendingFareRequestsCountResult,
+    activeRulesCountResult,
+    activeOverridesCountResult,
+    expiredOverridesCountResult,
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("fare_override_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabaseAdmin
+      .from("route_minimum_fares")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true),
+    supabaseAdmin
+      .from("user_fare_overrides")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "approved"),
+    supabaseAdmin
+      .from("user_fare_overrides")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "expired"),
+  ]);
 
   const prioritySettings = {
     matching_platinum_minutes:
@@ -581,11 +634,32 @@ export default async function DashboardPage() {
     from_state: row.from_state,
     to_city: row.to_city,
     to_state: row.to_state,
+    vehicle_category:
+      "vehicle_category" in row
+        ? ((row as { vehicle_category?: string | null }).vehicle_category ??
+          null)
+        : null,
     minimum_fare: Number(row.minimum_fare),
     is_active: Boolean(row.is_active),
     created_at: row.created_at,
     updated_at: row.updated_at,
   }));
+
+  const fareStats = {
+    minimumFareRules: routeMinimumFares.length,
+    activeRules: activeRulesCountResult.error
+      ? routeMinimumFares.filter((r) => r.is_active).length
+      : (activeRulesCountResult.count ?? 0),
+    pendingFareRequests: pendingFareRequestsCountResult.error
+      ? 0
+      : (pendingFareRequestsCountResult.count ?? 0),
+    activeUserOverrides: activeOverridesCountResult.error
+      ? 0
+      : (activeOverridesCountResult.count ?? 0),
+    expiredOverrides: expiredOverridesCountResult.error
+      ? 0
+      : (expiredOverridesCountResult.count ?? 0),
+  };
 
   return (
     <div className="min-h-screen">
@@ -624,6 +698,7 @@ export default async function DashboardPage() {
           profileChangeRequests={profileChangeRequests}
           vehicles={vehicles}
           routeMinimumFares={routeMinimumFares}
+          fareStats={fareStats}
         />
         </Suspense>
       </main>
